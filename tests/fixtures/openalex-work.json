@@ -1,0 +1,220 @@
+{
+  "id": "https://openalex.org/W2919115771",
+  "doi": "https://doi.org/10.1038/nature14539",
+  "display_name": "Deep learning",
+  "publication_year": 2015,
+  "publication_date": "2015-05-26",
+  "ids": {
+    "openalex": "https://openalex.org/W2919115771",
+    "doi": "https://doi.org/10.1038/nature14539",
+    "mag": "2919115771",
+    "pmid": "https://pubmed.ncbi.nlm.nih.gov/26017442"
+  },
+  "authorships": [
+    {
+      "author_position": "first",
+      "author": {
+        "id": "https://openalex.org/A5001226970",
+        "display_name": "Yann LeCun",
+        "orcid": "https://orcid.org/0000-0002-1992-2684",
+        "observed_orcids": ["https://orcid.org/0000-0002-1992-2684"]
+      },
+      "is_corresponding": true,
+      "raw_author_name": "Yann LeCun",
+      "raw_orcid": null
+    },
+    {
+      "author_position": "middle",
+      "author": {
+        "id": "https://openalex.org/A5086198262",
+        "display_name": "Yoshua Bengio",
+        "orcid": "https://orcid.org/0000-0002-9322-3515",
+        "observed_orcids": ["https://orcid.org/0000-0002-9322-3515"]
+      },
+      "is_corresponding": false,
+      "raw_author_name": "Yoshua Bengio",
+      "raw_orcid": null
+    },
+    {
+      "author_position": "last",
+      "author": {
+        "id": "https://openalex.org/A5108093963",
+        "display_name": "Geoffrey E. Hinton",
+        "orcid": null,
+        "observed_orcids": []
+      },
+      "is_corresponding": false,
+      "raw_author_name": "Geoffrey Hinton",
+      "raw_orcid": null
+    }
+  ],
+  "primary_location": {
+    "id": "doi:10.1038/nature14539",
+    "is_oa": false,
+    "landing_page_url": "https://doi.org/10.1038/nature14539",
+    "pdf_url": null,
+    "source": {
+      "id": "https://openalex.org/S137773608",
+      "display_name": "Nature",
+      "issn_l": "0028-0836",
+      "issn": ["0028-0836", "1476-4687"],
+      "is_oa": false,
+      "is_in_doaj": false,
+      "is_core": true,
+      "listed_in": ["cwts-core", "doyens", "erih-plus", "jufo-3", "ki-jl-3", "medline", "norway-2"],
+      "host_organization": "https://openalex.org/P4310319908",
+      "host_organization_name": "Nature Portfolio",
+      "host_organization_lineage": ["https://openalex.org/P4310319908", "https://openalex.org/P4310319965"],
+      "host_organization_lineage_names": ["Nature Portfolio", "Springer Nature"],
+      "type": "journal"
+    },
+    "license": null,
+    "license_id": null,
+    "version": "publishedVersion",
+    "is_accepted": true,
+    "is_published": true,
+    "raw_source_name": "Nature",
+    "raw_type": "journal-article"
+  },
+  "best_oa_location": {
+    "id": "pmh:oai:HAL:hal-04206682v1",
+    "is_oa": true,
+    "landing_page_url": "https://hal.science/hal-04206682",
+    "pdf_url": null,
+    "source": {
+      "id": "https://openalex.org/S4306402512",
+      "display_name": "HAL (Le Centre pour la Communication Scientifique Directe)",
+      "issn_l": null,
+      "issn": null,
+      "is_oa": false,
+      "is_in_doaj": false,
+      "is_core": false,
+      "listed_in": [],
+      "host_organization": "https://openalex.org/I1294671590",
+      "host_organization_name": "Centre National de la Recherche Scientifique",
+      "host_organization_lineage": ["https://openalex.org/I1294671590"],
+      "host_organization_lineage_names": [],
+      "type": "repository"
+    },
+    "license": "other-oa",
+    "license_id": "https://openalex.org/licenses/other-oa",
+    "version": "submittedVersion",
+    "is_accepted": false,
+    "is_published": false,
+    "raw_source_name": "Nature, 2015, 521 (7553), pp.436-444. &#x27E8;10.1038/nature14539&#x27E9;",
+    "raw_type": "info:eu-repo/semantics/article"
+  },
+  "open_access": {
+    "is_oa": true,
+    "oa_status": "green",
+    "oa_url": "https://hal.science/hal-04206682",
+    "any_repository_has_fulltext": true
+  },
+  "cited_by_count": 85342,
+  "referenced_works_count": 54,
+  "abstract_inverted_index": null,
+  "type": "article",
+  "primary_topic": {
+    "id": "https://openalex.org/T10775",
+    "display_name": "Generative Adversarial Networks and Image Synthesis",
+    "score": 0.9987999796867371,
+    "subfield": {
+      "id": "https://openalex.org/subfields/1707",
+      "display_name": "Computer Vision and Pattern Recognition"
+    },
+    "field": {
+      "id": "https://openalex.org/fields/17",
+      "display_name": "Computer Science"
+    },
+    "domain": {
+      "id": "https://openalex.org/domains/3",
+      "display_name": "Physical Sciences"
+    }
+  },
+  "locations": [
+    {
+      "id": "doi:10.1038/nature14539",
+      "is_oa": false,
+      "landing_page_url": "https://doi.org/10.1038/nature14539",
+      "pdf_url": null,
+      "source": {
+        "id": "https://openalex.org/S137773608",
+        "display_name": "Nature",
+        "issn_l": "0028-0836",
+        "issn": ["0028-0836", "1476-4687"],
+        "is_oa": false,
+        "is_in_doaj": false,
+        "is_core": true,
+        "listed_in": ["cwts-core", "doyens", "erih-plus", "jufo-3", "ki-jl-3", "medline", "norway-2"],
+        "host_organization": "https://openalex.org/P4310319908",
+        "host_organization_name": "Nature Portfolio",
+        "host_organization_lineage": ["https://openalex.org/P4310319908", "https://openalex.org/P4310319965"],
+        "host_organization_lineage_names": ["Nature Portfolio", "Springer Nature"],
+        "type": "journal"
+      },
+      "license": null,
+      "license_id": null,
+      "version": "publishedVersion",
+      "is_accepted": true,
+      "is_published": true,
+      "raw_source_name": "Nature",
+      "raw_type": "journal-article"
+    },
+    {
+      "id": "pmid:26017442",
+      "is_oa": false,
+      "landing_page_url": "https://pubmed.ncbi.nlm.nih.gov/26017442",
+      "pdf_url": null,
+      "source": {
+        "id": "https://openalex.org/S4306525036",
+        "display_name": "PubMed",
+        "issn_l": null,
+        "issn": null,
+        "is_oa": false,
+        "is_in_doaj": false,
+        "is_core": false,
+        "listed_in": [],
+        "host_organization": "https://openalex.org/I1299303238",
+        "host_organization_name": "National Institutes of Health",
+        "host_organization_lineage": ["https://openalex.org/I1299303238"],
+        "host_organization_lineage_names": [],
+        "type": "repository"
+      },
+      "license": null,
+      "license_id": null,
+      "version": "publishedVersion",
+      "is_accepted": true,
+      "is_published": true,
+      "raw_source_name": "Nature",
+      "raw_type": "Journal Article"
+    },
+    {
+      "id": "pmh:oai:HAL:hal-04206682v1",
+      "is_oa": true,
+      "landing_page_url": "https://hal.science/hal-04206682",
+      "pdf_url": null,
+      "source": {
+        "id": "https://openalex.org/S4306402512",
+        "display_name": "HAL (Le Centre pour la Communication Scientifique Directe)",
+        "issn_l": null,
+        "issn": null,
+        "is_oa": false,
+        "is_in_doaj": false,
+        "is_core": false,
+        "listed_in": [],
+        "host_organization": "https://openalex.org/I1294671590",
+        "host_organization_name": "Centre National de la Recherche Scientifique",
+        "host_organization_lineage": ["https://openalex.org/I1294671590"],
+        "host_organization_lineage_names": [],
+        "type": "repository"
+      },
+      "license": "other-oa",
+      "license_id": "https://openalex.org/licenses/other-oa",
+      "version": "submittedVersion",
+      "is_accepted": false,
+      "is_published": false,
+      "raw_source_name": "Nature, 2015, 521 (7553), pp.436-444. &#x27E8;10.1038/nature14539&#x27E9;",
+      "raw_type": "info:eu-repo/semantics/article"
+    }
+  ]
+}

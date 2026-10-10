@@ -1,0 +1,8 @@
+.next
+node_modules
+drizzle/meta
+public/pdf.worker.min.mjs
+playwright-report
+test-results
+package-lock.json
+data

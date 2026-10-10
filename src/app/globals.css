@@ -1,0 +1,607 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Design tokens. Components use the semantic names (bg-surface, text-muted…), never raw colors. */
+:root {
+  --bg: #f8f7f4;
+  --surface: #ffffff;
+  --surface-2: #f2f0ec;
+  --surface-3: #e9e6e0;
+  --border: #e3dfd8;
+  --border-strong: #cfc9bf;
+  --text: #1d1c1a;
+  --muted: #69645c;
+  --subtle: #8e887e;
+  --accent: #3150c9;
+  --accent-hover: #2742b0;
+  --accent-soft: #e8ecfb;
+  --on-accent: #ffffff;
+  --accent-text: #2a46b8;
+  --danger: #c2372f;
+  --danger-soft: #fbeceb;
+  --success: #24804a;
+  --success-soft: #e6f4ec;
+  --warning: #a8670a;
+  --warning-soft: #fbf1df;
+  --ai: #7b4bc4;
+  --ai-soft: #f2ecfb;
+  --ring: #3150c9;
+  --node-paper: #3d63dd;
+  --node-concept: #c27a14;
+  --node-note: #2b8a57;
+  --hl-yellow: rgba(255, 214, 10, 0.38);
+  --hl-green: rgba(52, 199, 89, 0.3);
+  --hl-blue: rgba(10, 132, 255, 0.25);
+  --hl-pink: rgba(255, 55, 135, 0.25);
+  --hl-purple: rgba(175, 82, 222, 0.25);
+  /* Saturated versions: the selected highlight's tint, underline and card border. */
+  --hl-yellow-strong: rgba(214, 170, 0, 0.9);
+  --hl-green-strong: rgba(36, 160, 70, 0.9);
+  --hl-blue-strong: rgba(10, 110, 230, 0.9);
+  --hl-pink-strong: rgba(220, 40, 115, 0.9);
+  --hl-purple-strong: rgba(150, 60, 200, 0.9);
+  color-scheme: light;
+}
+
+.dark {
+  --bg: #141413;
+  --surface: #1c1b1a;
+  --surface-2: #242321;
+  --surface-3: #2e2c29;
+  --border: #33312e;
+  --border-strong: #46433e;
+  --text: #ecebe8;
+  --muted: #a8a399;
+  --subtle: #857f75;
+  --accent: #7b93ff;
+  --accent-hover: #93a7ff;
+  --accent-soft: #232a45;
+  --on-accent: #0d1330;
+  --accent-text: #a3b4ff;
+  --danger: #ff7a70;
+  --danger-soft: #3a1f1d;
+  --success: #5fd08d;
+  --success-soft: #19301f;
+  --warning: #f0b453;
+  --warning-soft: #352a17;
+  --ai: #b996f2;
+  --ai-soft: #2c2340;
+  --ring: #7b93ff;
+  --node-paper: #7b93ff;
+  --node-concept: #f0b453;
+  --node-note: #5fd08d;
+  --hl-yellow: rgba(255, 214, 10, 0.3);
+  color-scheme: dark;
+}
+
+/* ---------------------------------------------------------------------------
+ * Motion. Short, eased, and purposeful: things arrive with a small rise, controls respond to presses,
+ * popovers grow from where they were opened. Everything respects prefers-reduced-motion (below).
+ * ------------------------------------------------------------------------- */
+@theme {
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+  --animate-fade-in: fade-in 200ms var(--ease-out-quart) both;
+  --animate-fade-out: fade-out 140ms ease-in both;
+  --animate-fade-up: fade-up 320ms var(--ease-out-quart) both;
+  --animate-scale-in: scale-in 180ms var(--ease-out-quart) both;
+  --animate-scale-out: scale-out 130ms ease-in both;
+  --animate-pop: pop 360ms var(--ease-spring);
+  --animate-slide-in-right: slide-in-right 260ms var(--ease-out-quart) both;
+  --animate-shimmer: shimmer 1.6s linear infinite;
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+  }
+  @keyframes fade-out {
+    to {
+      opacity: 0;
+    }
+  }
+  @keyframes fade-up {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+  }
+  @keyframes scale-in {
+    from {
+      opacity: 0;
+      transform: scale(0.96);
+    }
+  }
+  @keyframes scale-out {
+    to {
+      opacity: 0;
+      transform: scale(0.97);
+    }
+  }
+  @keyframes pop {
+    40% {
+      transform: scale(1.22);
+    }
+  }
+  @keyframes slide-in-right {
+    from {
+      opacity: 0;
+      transform: translateX(12px);
+    }
+  }
+  @keyframes shimmer {
+    from {
+      background-position: 200% 0;
+    }
+    to {
+      background-position: -200% 0;
+    }
+  }
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-subtle: var(--subtle);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-soft: var(--accent-soft);
+  --color-on-accent: var(--on-accent);
+  --color-accent-text: var(--accent-text);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-ai: var(--ai);
+  --color-ai-soft: var(--ai-soft);
+  --color-ring: var(--ring);
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Source Serif Pro", Georgia, ui-serif, serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--text);
+}
+
+body {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* In the base layer so components can opt out (e.g. borderless title fields with `focus-visible:outline-none`). */
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+}
+
+::selection {
+  background: color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+/* Rendered Markdown (AI output, public notes). */
+.prose-content {
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+.prose-content > * + * {
+  margin-top: 0.7em;
+}
+.prose-content h1,
+.prose-content h2,
+.prose-content h3 {
+  font-weight: 600;
+  line-height: 1.3;
+  margin-top: 1.1em;
+}
+.prose-content h1 {
+  font-size: 1.35em;
+}
+.prose-content h2 {
+  font-size: 1.15em;
+}
+.prose-content h3 {
+  font-size: 1.02em;
+}
+.prose-content ul {
+  list-style: disc;
+  padding-left: 1.4em;
+}
+.prose-content ol {
+  list-style: decimal;
+  padding-left: 1.4em;
+}
+.prose-content li + li {
+  margin-top: 0.25em;
+}
+.prose-content code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  background: var(--surface-2);
+  padding: 0.1em 0.3em;
+  border-radius: 4px;
+}
+.prose-content pre {
+  background: var(--surface-2);
+  padding: 0.8em 1em;
+  border-radius: 8px;
+  overflow-x: auto;
+}
+.prose-content pre code {
+  background: none;
+  padding: 0;
+}
+.prose-content blockquote {
+  border-left: 3px solid var(--border-strong);
+  padding-left: 0.9em;
+  color: var(--muted);
+}
+.prose-content a {
+  color: var(--accent-text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+/* Citation chips in AI research answers. */
+.prose-content a.cite-chip {
+  text-decoration: none;
+}
+.prose-content a.cite-chip.cite-note {
+  color: var(--warning);
+}
+.prose-content table {
+  border-collapse: collapse;
+  font-size: 0.92em;
+}
+.prose-content th,
+.prose-content td {
+  border: 1px solid var(--border);
+  padding: 0.3em 0.6em;
+}
+.prose-content hr {
+  border-color: var(--border);
+}
+
+/* Note editor (TipTap / ProseMirror), Notion-like: a page, not a box. */
+.note-editor .ProseMirror {
+  outline: none;
+  min-height: 45vh;
+  line-height: 1.65;
+  font-size: 1rem;
+  padding-bottom: 30vh; /* room to click below the last block, like a page */
+}
+.note-editor.compact .ProseMirror {
+  min-height: 14rem;
+  padding-bottom: 6rem;
+  font-size: 0.94rem;
+  line-height: 1.6;
+}
+.note-editor .ProseMirror > * + * {
+  margin-top: 0.35em;
+}
+.note-editor .ProseMirror p {
+  min-height: 1.65em;
+}
+.note-editor .ProseMirror h1 {
+  font-size: 1.875em;
+  font-weight: 700;
+  line-height: 1.25;
+  margin-top: 1.1em;
+}
+.note-editor .ProseMirror h2 {
+  font-size: 1.5em;
+  font-weight: 650;
+  line-height: 1.3;
+  margin-top: 1em;
+}
+.note-editor .ProseMirror h3 {
+  font-size: 1.25em;
+  font-weight: 620;
+  line-height: 1.35;
+  margin-top: 0.9em;
+}
+.note-editor .ProseMirror ul {
+  list-style: disc;
+  padding-left: 1.6em;
+}
+.note-editor .ProseMirror ol {
+  list-style: decimal;
+  padding-left: 1.6em;
+}
+.note-editor .ProseMirror li > p {
+  margin: 0.1em 0;
+}
+.note-editor .ProseMirror blockquote {
+  border-left: 3px solid var(--text);
+  padding-left: 0.9em;
+  margin-left: 0.1em;
+}
+.note-editor .ProseMirror code {
+  font-family: var(--font-mono);
+  font-size: 0.87em;
+  color: var(--danger);
+  background: var(--surface-2);
+  padding: 0.12em 0.35em;
+  border-radius: 4px;
+}
+.note-editor .ProseMirror pre {
+  background: var(--surface-2);
+  padding: 0.9em 1.1em;
+  border-radius: 6px;
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  overflow-x: auto;
+}
+.note-editor .ProseMirror pre code {
+  background: none;
+  padding: 0;
+  color: inherit;
+}
+.note-editor .ProseMirror hr {
+  border: none;
+  border-top: 1px solid var(--border-strong);
+  margin: 1em 0;
+}
+.note-editor .ProseMirror mark {
+  background: var(--hl-yellow);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 0.1em;
+}
+.note-editor .ProseMirror a:not(.mention) {
+  color: var(--accent-text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+/* Placeholder on the empty block that has the cursor (and on an empty page). */
+.note-editor .ProseMirror .is-empty::before,
+.note-editor .ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: var(--subtle);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+/* To-do lists */
+.note-editor .ProseMirror ul[data-type="taskList"] {
+  list-style: none;
+  padding-left: 0.1em;
+}
+.note-editor .ProseMirror ul[data-type="taskList"] li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5em;
+}
+.note-editor .ProseMirror ul[data-type="taskList"] li > label {
+  flex-shrink: 0;
+  margin-top: 0.28em;
+}
+.note-editor .ProseMirror ul[data-type="taskList"] li > label input {
+  width: 1.05em;
+  height: 1.05em;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.note-editor .ProseMirror ul[data-type="taskList"] li > div {
+  flex: 1;
+  min-width: 0;
+}
+.note-editor .ProseMirror ul[data-type="taskList"] li[data-checked="true"] > div {
+  color: var(--subtle);
+  text-decoration: line-through;
+}
+/* Toggles (collapsible sections) */
+.note-editor .ProseMirror [data-type="details"] {
+  display: flex;
+  gap: 0.3em;
+}
+.note-editor .ProseMirror [data-type="details"] > button {
+  flex-shrink: 0;
+  width: 1.4em;
+  height: 1.4em;
+  margin-top: 0.12em;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+}
+.note-editor .ProseMirror [data-type="details"] > button:hover {
+  background: var(--surface-2);
+}
+.note-editor .ProseMirror [data-type="details"] > button::before {
+  content: "▸";
+  transition: transform 0.15s;
+}
+.note-editor .ProseMirror [data-type="details"].is-open > button::before {
+  transform: rotate(90deg);
+}
+.note-editor .ProseMirror [data-type="details"] > div {
+  flex: 1;
+  min-width: 0;
+}
+.note-editor .ProseMirror [data-type="details"]:not(.is-open) [data-type="detailsContent"] {
+  display: none;
+}
+.note-editor .ProseMirror [data-type="detailsSummary"] {
+  font-weight: 500;
+}
+/* Callouts */
+.note-editor .ProseMirror [data-callout],
+.prose-content [data-callout] {
+  position: relative;
+  background: var(--surface-2);
+  border-radius: 6px;
+  padding: 0.8em 1em 0.8em 2.8em;
+}
+.note-editor .ProseMirror [data-callout]::before,
+.prose-content [data-callout]::before {
+  content: "💡";
+  position: absolute;
+  left: 0.9em;
+  top: 0.75em;
+}
+/* Tables */
+.note-editor .ProseMirror .tableWrapper {
+  overflow-x: auto;
+  margin: 0.6em 0;
+}
+.note-editor .ProseMirror table {
+  border-collapse: collapse;
+  width: 100%;
+  table-layout: fixed;
+  font-size: 0.94em;
+}
+.note-editor .ProseMirror th,
+.note-editor .ProseMirror td {
+  border: 1px solid var(--border);
+  padding: 0.4em 0.6em;
+  vertical-align: top;
+  position: relative;
+}
+.note-editor .ProseMirror th {
+  background: var(--surface-2);
+  font-weight: 600;
+  text-align: left;
+}
+.note-editor .ProseMirror .selectedCell::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  pointer-events: none;
+}
+/* Selected whole blocks (e.g. from the block handle) */
+.note-editor .ProseMirror .ProseMirror-selectednode {
+  border-radius: 4px;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+.note-editor .ProseMirror-dropcursor,
+.ProseMirror-dropcursor {
+  background: var(--accent);
+}
+
+/* Knowledge links inside notes: [[Concept]], @Paper. */
+.mention {
+  border-radius: 5px;
+  padding: 0.05em 0.35em;
+  font-weight: 500;
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.mention[data-type="paper"] {
+  background: color-mix(in srgb, var(--node-paper) 14%, transparent);
+  color: var(--node-paper);
+}
+.mention[data-type="concept"] {
+  background: color-mix(in srgb, var(--node-concept) 16%, transparent);
+  color: var(--node-concept);
+}
+.mention[data-type="note"] {
+  background: color-mix(in srgb, var(--node-note) 14%, transparent);
+  color: var(--node-note);
+}
+
+/* PDF text layer (pdf.js) */
+.react-pdf__Page {
+  position: relative;
+}
+.react-pdf__Page__textContent ::selection {
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+/* Lists whose items arrive one after another (the first 12; later ones arrive together). */
+.stagger > * {
+  animation: var(--animate-fade-up);
+  animation-delay: calc(var(--i, 12) * 32ms);
+}
+.stagger > :nth-child(1) {
+  --i: 0;
+}
+.stagger > :nth-child(2) {
+  --i: 1;
+}
+.stagger > :nth-child(3) {
+  --i: 2;
+}
+.stagger > :nth-child(4) {
+  --i: 3;
+}
+.stagger > :nth-child(5) {
+  --i: 4;
+}
+.stagger > :nth-child(6) {
+  --i: 5;
+}
+.stagger > :nth-child(7) {
+  --i: 6;
+}
+.stagger > :nth-child(8) {
+  --i: 7;
+}
+.stagger > :nth-child(9) {
+  --i: 8;
+}
+.stagger > :nth-child(10) {
+  --i: 9;
+}
+.stagger > :nth-child(11) {
+  --i: 10;
+}
+.stagger > :nth-child(12) {
+  --i: 11;
+}
+
+/* Items added one at a time (progress steps, messages) rise in as they appear, without a delay. */
+.appear > * {
+  animation: var(--animate-fade-up);
+}
+
+/* Skeletons: a soft light sweep instead of blinking. */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--surface-3) 0%,
+    color-mix(in srgb, var(--surface-3) 45%, var(--surface)) 50%,
+    var(--surface-3) 100%
+  );
+  background-size: 200% 100%;
+  animation: var(--animate-shimmer);
+}
+
+/* Page changes: the old page leaves quickly, the new one rises in gently (see app/(app)/template.tsx). */
+::view-transition-old(.page) {
+  animation: 120ms ease-in both fade-out;
+}
+::view-transition-new(.page) {
+  animation: 300ms var(--ease-out-quart) 60ms both fade-up;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+    transition-duration: 0.01ms !important;
+  }
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "identities": [
+    {
+      "name": "paperweave",
+      "credentials": [{ "accessKey": "paperweave", "secretKey": "paperweave-secret" }],
+      "actions": ["Admin", "Read", "Write", "List", "Tagging"]
+    }
+  ]
+}

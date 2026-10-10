@@ -1,0 +1,1 @@
+ALTER TABLE "ai_results" ADD COLUMN "basis" jsonb;

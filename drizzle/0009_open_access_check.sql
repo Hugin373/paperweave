@@ -1,0 +1,1 @@
+ALTER TABLE "papers" ADD COLUMN "oa_checked_at" timestamp with time zone;

@@ -1,0 +1,12 @@
+.git
+.next
+node_modules
+data
+test-results
+playwright-report
+coverage
+.env
+.env.*
+!.env.example
+*.log
+public/pdf.worker.min.mjs

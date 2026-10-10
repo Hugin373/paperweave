@@ -1,0 +1,39 @@
+# Local infrastructure: the database for development and tests (and for a library kept on this computer),
+# and S3-compatible object storage (SeaweedFS). `docker compose up -d` starts both.
+# The application creates its bucket automatically when S3_AUTO_CREATE_BUCKET=true.
+# The fixed project name keeps container and volume names independent of the folder name.
+name: paperweave
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    # Starts again with Docker (e.g. after a restart) when the library is kept on this computer.
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: paperweave
+      POSTGRES_PASSWORD: paperweave
+      POSTGRES_DB: paperweave
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      # Postgres 18 keeps its files in a version folder under /var/lib/postgresql.
+      - pgdata18:/var/lib/postgresql
+      - ./docker/postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U paperweave"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  s3:
+    image: chrislusf/seaweedfs:latest
+    command: server -dir=/data -s3 -s3.port=8333 -s3.config=/etc/seaweedfs/s3.json
+    ports:
+      - "${S3_PORT:-8333}:8333"
+    volumes:
+      - s3data:/data
+      - ./docker/seaweedfs/s3.json:/etc/seaweedfs/s3.json:ro
+
+volumes:
+  pgdata18:
+  s3data:

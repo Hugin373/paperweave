@@ -1,0 +1,1 @@
+ALTER TABLE "research_messages" ADD COLUMN "ranking" jsonb;

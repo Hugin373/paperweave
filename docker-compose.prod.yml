@@ -1,0 +1,51 @@
+# Self-contained production deployment: app + PostgreSQL + S3-compatible storage.
+#   cp .env.example .env.production   # set secrets, APP_URL, etc.
+#   docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
+# Put a TLS-terminating reverse proxy (Caddy, nginx, Traefik…) in front of port 3300.
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    env_file: .env.production
+    environment:
+      DATABASE_URL: postgres://paperweave:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/paperweave
+      STORAGE_DRIVER: s3
+      S3_ENDPOINT: http://s3:8333
+      S3_FORCE_PATH_STYLE: "true"
+      S3_AUTO_CREATE_BUCKET: "true"
+    ports:
+      - "3300:3300"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      s3:
+        condition: service_started
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: paperweave
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: paperweave
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U paperweave"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  s3:
+    image: chrislusf/seaweedfs:latest
+    restart: unless-stopped
+    command: server -dir=/data -s3 -s3.port=8333 -s3.config=/etc/seaweedfs/s3.json
+    volumes:
+      - s3data:/data
+      # Create this file with your own access/secret keys (see docker/seaweedfs/s3.json for the format)
+      # and set the same values as S3_ACCESS_KEY_ID / S3_SECRET_ACCESS_KEY in .env.production.
+      - ./docker/seaweedfs/s3.production.json:/etc/seaweedfs/s3.json:ro
+
+volumes:
+  pgdata:
+  s3data:
