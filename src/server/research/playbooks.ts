@@ -41,7 +41,7 @@ C. Cleaning up — each is a different action; propose only what the user asked 
     name: "organize",
     title: "Organizing papers into collections and tags",
     when: "the user asks to save, group, sort or tag papers, or to make a collection",
-    steps: `1. Find the papers so they have keys: search_library / find_saved_papers for saved papers (filters such as has_notes false or not_collection find what is not organized yet; page with "offset" so nothing is missed), search_papers for new ones (when literature search is on).
+    steps: `1. Find the papers so they have keys: search_library / find_saved_papers for saved papers (filters such as has_notes false or not_collection find what is not organized yet; page with "offset" so nothing is missed), search_papers for new ones (when literature search is on). To decide what saved papers are about, list them with "abstracts": true and group by what the abstracts say, not by title words; let the groups come from the papers rather than from an assumed theme.
 2. list_workspace to see existing collections and tags; add to an existing collection when one fits instead of creating a near-duplicate.
 3. Collections are for a project, question or reading list (a few to a few dozen papers); tags are short labels that cut across collections (e.g. "to-replicate", "survey", "dataset").
 4. Name collections by their purpose ("Thesis ch. 2 — cardiac MRI segmentation"), with a one-line description.

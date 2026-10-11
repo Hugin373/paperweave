@@ -153,6 +153,7 @@ const readActionSchema = z.discriminatedUnion("tool", [
     types,
     not_types: types,
     sort: z.enum(SAVED_SORTS).optional().catch(undefined),
+    abstracts: flag,
     offset,
     limit: z.coerce.number().int().min(1).max(100).optional().catch(undefined),
   }),
@@ -446,6 +447,7 @@ export function toolFor(a: ReadAction, sources: SourceRegistry): ToolSpec {
           types: a.types,
           notTypes: a.not_types,
           sort: a.sort,
+          abstracts: a.abstracts,
           offset: a.offset,
           limit: a.limit,
         });
@@ -521,7 +523,7 @@ Reading actions (refer to papers and notes only by the keys shown in <sources>, 
 - {"tool": "list_concepts"} — the user's existing concepts and how many papers each links.
 - {"tool": "read_concept", "concept": "<name>"} — one concept: its description, every paper linked to it (with keys), related concepts, notes that mention it.
 - {"tool": "paper_info", "paper": "P3"} — P3 in the user's workspace: reading status, collections, tags, concepts, notes on it (with keys), highlights, PDF.
-- {"tool": "find_saved_papers", "collection": "A" or ["A", "B"], "tag": ..., "concept": ..., "not_collection": ..., "not_tag": ..., "not_concept": ..., "status": "saved" or ["saved", "reading"], "query": "...", "year_from": 2020, "year_to": 2025, "has_pdf": true, "has_notes": false, "has_highlights": false, "has_concepts": false, "in_collection": false, "types": ["review"], "not_types": ["review"], "sort": "updated|added|newest|oldest|citations|title", "offset": 0, "limit": 60} — the user's saved papers matching ALL given filters (each optional; a list means any of them; has_…/in_collection false finds what is missing, e.g. unread papers without notes). Reports the total; page with "offset" (up to 100 per call). Types: journal_article, conference, preprint, review (surveys), book, dataset, dissertation, other.
+- {"tool": "find_saved_papers", "collection": "A" or ["A", "B"], "tag": ..., "concept": ..., "not_collection": ..., "not_tag": ..., "not_concept": ..., "status": "saved" or ["saved", "reading"], "query": "...", "year_from": 2020, "year_to": 2025, "has_pdf": true, "has_notes": false, "has_highlights": false, "has_concepts": false, "in_collection": false, "types": ["review"], "not_types": ["review"], "sort": "updated|added|newest|oldest|citations|title", "abstracts": true, "offset": 0, "limit": 60} — the user's saved papers matching ALL given filters (each optional; a list means any of them; has_…/in_collection false finds what is missing, e.g. unread papers without notes). Reports the total; page with "offset" (up to 100 per call). With "abstracts": true each paper also shows the start of its abstract — use it whenever you judge what papers are about (organizing, grouping, linking concepts) rather than guessing from titles. Types: journal_article, conference, preprint, review (surveys), book, dataset, dissertation, other.
 - {"tool": "read_highlights", "paper": "P3"} — the user's highlights and comments on P3, by page ("offset" pages past 120).
 - {"tool": "related_in_library", "paper": "P3"} — saved papers connected to P3 through concepts, collections, citations or notes, strongest first.
 - {"tool": "open_playbook", "name": "..."} — a step-by-step guide for a kind of task (see Playbooks).

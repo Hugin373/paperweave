@@ -9,7 +9,7 @@ import { and, eq, isNull, lt, or, sql } from "drizzle-orm";
 import { db } from "@/server/db/client";
 import { libraryItems, paperIdentifiers, papers } from "@/server/db/schema";
 import { enqueueJob } from "@/server/jobs/queue";
-import { aclAnthologyPdf } from "@/server/scholarly/free-pdf";
+import { aclAnthologyPdf, serverCanFetchPdf } from "@/server/scholarly/free-pdf";
 import { pmcidFromUrl } from "@/server/scholarly/providers/unpaywall";
 import { scholarly } from "@/server/scholarly/service";
 import { identifiersFor } from "./service";
@@ -42,7 +42,8 @@ export async function checkOpenAccess(paperId: string): Promise<string | null> {
   }
   const result = await scholarly().unpaywallCheck(ids.doi);
   if (result === null) return null; // lookups are off: check again once they are on
-  const found = result.pdfs[0] ?? null;
+  // PMC's PDF links are bot-checked: such a copy is recorded as free to read (freeReadUrl), not as a PDF.
+  const found = result.pdfs.find((u) => serverCanFetchPdf(u)) ?? null;
   await db
     .update(papers)
     .set({

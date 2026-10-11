@@ -12,6 +12,15 @@ const nextConfig: NextConfig = {
   // Self-contained server bundle for the Docker image.
   output: "standalone",
   poweredByHeader: false,
+  turbopack: {
+    // The reader uses pdf.js's legacy build in the browser: the modern build relies on JavaScript features only
+    // the newest browsers have (Promise.try, Map.getOrInsertComputed…), and on older Safari (iPhones not on
+    // the latest iOS) no PDF would open. The legacy build carries fallbacks for them.
+    resolveAlias: {
+      "pdfjs-dist": { browser: "pdfjs-dist/legacy/build/pdf.mjs" },
+      "pdfjs-dist/web/pdf_viewer.mjs": { browser: "pdfjs-dist/legacy/web/pdf_viewer.mjs" },
+    },
+  },
   // pdf.js (server-side text extraction), its native canvas (page images) and the local embedding model
   // runtime must not be bundled.
   serverExternalPackages: ["unpdf", "@napi-rs/canvas", "@huggingface/transformers", "onnxruntime-node", "sharp"],

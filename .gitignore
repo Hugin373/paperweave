@@ -49,6 +49,7 @@ next-env.d.ts
 /e2e/.auth
 /test-results-server.log
 /public/pdf.worker.min.mjs
+/public/pdf.worker.entry.mjs
 
 # internal notes and AI-agent instructions: kept on this computer, never published
 /docs/

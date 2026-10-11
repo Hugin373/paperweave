@@ -15,3 +15,33 @@ export function aclAnthologyPdf(doi: string | null | undefined, aclId?: string |
   const id = aclAnthologyId(doi, aclId);
   return id ? `https://aclanthology.org/${id}.pdf` : null;
 }
+
+/**
+ * False for links that are not downloadable PDFs for a server, although sources report them as the free
+ * PDF: DOI links (they open the article's web page) and PubMed Central / Europe PMC PDF links (bot-checked:
+ * a reCAPTCHA page or HTTP 403). A browser can still open them, so they serve as "read free" links.
+ */
+export function serverCanFetchPdf(url: string | null | undefined): boolean {
+  if (!url) return false;
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    return false;
+  }
+  const host = u.hostname.replace(/^www\./, "");
+  if (host === "doi.org" || host === "dx.doi.org") return false;
+  if (host === "pmc.ncbi.nlm.nih.gov" || (host === "ncbi.nlm.nih.gov" && u.pathname.startsWith("/pmc/"))) return false;
+  if (host === "europepmc.org" && (u.searchParams.has("pdf") || u.pathname.includes("render"))) return false;
+  return true;
+}
+
+/**
+ * Versions of a PDF link to try, best first. Nature posts an "accepted article preview" (…_reference.pdf,
+ * marked "article in press") before the final article, and sources keep pointing at it afterwards: the final
+ * PDF is tried first, the preview only while the final one does not exist yet.
+ */
+export function pdfUrlVariants(url: string): string[] {
+  const nature = /^(https:\/\/www\.nature\.com\/articles\/[a-z0-9.\-]+)_reference\.pdf$/i.exec(url);
+  return nature ? [`${nature[1]}.pdf`, url] : [url];
+}

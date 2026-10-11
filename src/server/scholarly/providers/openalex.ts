@@ -7,7 +7,7 @@ import {
   normalizePmid,
   normalizeTitle,
 } from "@/lib/identifiers";
-import { aclAnthologyPdf } from "../free-pdf";
+import { aclAnthologyPdf, serverCanFetchPdf } from "../free-pdf";
 import { venueNames } from "../venues";
 import { providerFetch, Throttle } from "../http";
 import { normalizePublicationType } from "../publication-types";
@@ -175,8 +175,9 @@ export function mapOpenAlexWork(w: OAWork): NormalizedPaper | null {
   // arXiv's own PDF is the most reliable open copy when the work is on arXiv.
   const pdf =
     (arxiv ? `https://arxiv.org/pdf/${arxiv}` : null) ??
-    w.best_oa_location?.pdf_url ??
-    (w.locations ?? []).find((l) => l.is_oa && l.pdf_url)?.pdf_url ??
+    [w.best_oa_location?.pdf_url, ...(w.locations ?? []).filter((l) => l.is_oa).map((l) => l.pdf_url)].find((u) =>
+      serverCanFetchPdf(u),
+    ) ??
     aclAnthologyPdf(doi);
 
   return {

@@ -1,5 +1,7 @@
 "use client";
 
+// Before pdf.js: it loops over streams, which Safari cannot do natively yet.
+import "@/lib/stream-iteration";
 import "react-pdf/dist/Page/TextLayer.css";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import { ArrowLeft, ChevronDown, ChevronUp, Maximize2, StickyNote, X, ZoomIn, ZoomOut } from "lucide-react";
@@ -32,7 +34,8 @@ import {
 import { NoteDraftPopover, SelectionPopover, type PendingSelection } from "./selection-popover";
 import type { NewHighlight } from "./use-highlights";
 
-pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
+// The entry adds the stream fallback to the worker too, then loads pdf.js's worker (scripts/copy-pdf-worker.mjs).
+pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.entry.mjs";
 
 const GAP = 16;
 const PAD = 16;
@@ -155,6 +158,7 @@ const PageBox = memo(function PageBox({
           <Page
             pageNumber={n}
             width={pageWidth}
+            devicePixelRatio={RENDER_PIXEL_RATIO()}
             renderAnnotationLayer
             renderTextLayer
             loading={<PagePlaceholder h={h} />}
@@ -215,6 +219,16 @@ const PageBox = memo(function PageBox({
   );
 });
 
+/**
+ * Pages are drawn at the screen's pixel density, but at most 2×: phones are 3×, where full-density pages take
+ * more than twice the memory (Safari reloads tabs that use too much) with no visible gain in sharpness.
+ */
+const STALLED = "stalled";
+/** Long enough for a large PDF on a slow phone connection. */
+const STALL_MS = 90_000;
+
+const RENDER_PIXEL_RATIO = () => Math.min(window.devicePixelRatio || 1, 2);
+
 export default function PdfViewer({
   url,
   liveHost = null,
@@ -242,6 +256,13 @@ export default function PdfViewer({
   const [aspectReady, setAspectReady] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [loadError, setLoadError] = useState<Error | null>(null);
+  // If pdf.js fails outside its own error reporting (e.g. a browser missing a feature it needs), the document
+  // never loads and never errors: give up after a while instead of showing "Opening PDF…" forever.
+  useEffect(() => {
+    if (numPages || loadError) return;
+    const t = setTimeout(() => setLoadError(new Error(STALLED)), STALL_MS);
+    return () => clearTimeout(t);
+  }, [url, numPages, loadError]);
   const [pending, setPending] = useState<PendingSelection | null>(null);
   const [noteMode, setNoteMode] = useState(false);
   const [noteDraft, setNoteDraft] = useState<NoteDraft | null>(null);
@@ -773,9 +794,11 @@ export default function PdfViewer({
               error={
                 /password/i.test(loadError.message)
                   ? "The file is password-protected."
-                  : liveHost
-                    ? `It is read live from ${liveHost}, which could not be reached or did not return a PDF. Try again later, or keep a copy here for offline reading.`
-                    : "The file may be damaged or not a valid PDF. Try downloading it, or upload another copy."
+                  : loadError.message === STALLED
+                    ? "The PDF did not finish opening. Try reloading the page; if it keeps happening, this browser may be too old for the PDF reader (on an iPhone, update iOS)."
+                    : liveHost
+                      ? `It is read live from ${liveHost}, which could not be reached or did not return a PDF. Try again later, or keep a copy here for offline reading. (${loadError.message})`
+                      : `The file may be damaged or not a valid PDF. Try downloading it, or upload another copy. (${loadError.message})`
               }
             />
           </div>

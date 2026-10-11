@@ -1,5 +1,5 @@
 import { normalizeArxivId, normalizeDoi } from "@/lib/identifiers";
-import { aclAnthologyPdf } from "../free-pdf";
+import { aclAnthologyPdf, serverCanFetchPdf } from "../free-pdf";
 import { venueNames } from "../venues";
 import { providerFetch, Throttle } from "../http";
 import { normalizePublicationType } from "../publication-types";
@@ -97,7 +97,9 @@ export function mapS2Paper(p: S2Paper): NormalizedPaper | null {
   if (ext.PubMed) ids.pmid = String(ext.PubMed);
   if (ext.PubMedCentral) ids.pmcid = `PMC${String(ext.PubMedCentral).replace(/^PMC/i, "")}`;
   if (ext.CorpusId) ids.corpus = String(ext.CorpusId);
-  const pdf = p.openAccessPdf?.url?.trim() || aclAnthologyPdf(doi, ext.ACL ? String(ext.ACL) : null);
+  // A reported "PDF" that a server cannot download (a DOI link, a bot-checked PMC link) is a read-free link.
+  const reported = p.openAccessPdf?.url?.trim() || null;
+  const pdf = (serverCanFetchPdf(reported) ? reported : null) || aclAnthologyPdf(doi, ext.ACL ? String(ext.ACL) : null);
   return {
     source: "semantic_scholar",
     ids,
@@ -116,6 +118,7 @@ export function mapS2Paper(p: S2Paper): NormalizedPaper | null {
     influentialCitationCount: p.influentialCitationCount ?? null,
     isOpenAccess: p.isOpenAccess ?? (pdf ? true : null),
     openAccessPdfUrl: arxiv ? `https://arxiv.org/pdf/${arxiv}` : pdf || null,
+    freeReadUrl: !arxiv && !pdf && reported ? reported : null,
     url: p.url ?? null,
   };
 }

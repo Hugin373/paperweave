@@ -523,6 +523,13 @@ describe("assistant workspace tools", () => {
     await expect(run({ tool: "find_saved_papers", tag: "missing" })).rejects.toThrow(/no tag/);
   });
 
+  it("shows the start of each abstract when asked, so papers are judged by content", async () => {
+    const plain = await run({ tool: "find_saved_papers", status: "read" });
+    expect(plain.report).not.toContain("Abstract:");
+    const withAbstracts = await run({ tool: "find_saved_papers", status: "read", abstracts: true });
+    expect(withAbstracts.report).toMatch(/- P2: Brain MRI registration .*\n  Abstract: \S/);
+  });
+
   it("finds connected papers in the library", async () => {
     const r = await run({ tool: "related_in_library", paper: "P1" });
     expect(r.report).toMatch(/P2: Brain MRI registration \(2021\) — via concept “MRI”/);

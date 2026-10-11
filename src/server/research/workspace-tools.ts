@@ -152,6 +152,8 @@ export interface SavedPaperFilter {
   types?: string[];
   notTypes?: string[];
   sort?: SavedSort;
+  /** Also show the start of each paper's abstract (for judging what papers are about). */
+  abstracts?: boolean;
   offset?: number;
   limit?: number;
 }
@@ -161,6 +163,8 @@ type SavedSort = (typeof SAVED_SORTS)[number];
 
 const FIND_LIMIT = 60;
 const FIND_MAX = 100;
+/** Enough of an abstract to tell what a paper is about; a whole library (a few hundred papers) still fits. */
+const LISTED_ABSTRACT_CHARS = 300;
 
 /** Ids of the workspace's collections / tags / concepts with these names; unknown names are an input error. */
 async function idsByName(ws: string, kind: "collection" | "tag" | "concept", names: string[]): Promise<string[]> {
@@ -319,7 +323,9 @@ export async function findSavedPapers(ctx: ToolContext, f: SavedPaperFilter): Pr
     const inCols = cols.get(p.id) ?? [];
     return `- ${s.key}: ${p.title} (${p.year ?? "n.d."}) · ${status.get(p.id)}${pdf.has(p.id) ? " · PDF" : ""}${
       p.publicationTypes.includes("review") ? " · review" : ""
-    }${inCols.length ? ` · in ${inCols.map((c) => `“${c}”`).join(", ")}` : ""}`;
+    }${inCols.length ? ` · in ${inCols.map((c) => `“${c}”`).join(", ")}` : ""}${
+      f.abstracts && p.abstract ? `\n  Abstract: ${clean(p.abstract, LISTED_ABSTRACT_CHARS)}` : ""
+    }`;
   });
   const range = summaries.length ? `${offset + 1}–${offset + summaries.length}` : "none";
   const more = offset + summaries.length < total ? ` More: repeat with "offset": ${offset + summaries.length}.` : "";

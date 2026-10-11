@@ -7,6 +7,7 @@ import { env } from "@/server/env";
 import { AppError, badRequest, notFound } from "@/server/http";
 import { enqueueJob } from "@/server/jobs/queue";
 import { readLimited, safeFetch, UnsafeUrlError } from "@/server/net/safe-fetch";
+import { pdfUrlVariants, serverCanFetchPdf } from "@/server/scholarly/free-pdf";
 import { getVisiblePaper } from "@/server/papers/service";
 import { scholarly } from "@/server/scholarly/service";
 import { queueFileEmbedding } from "@/server/embeddings/queue";
@@ -135,7 +136,20 @@ const PDF_REQUEST_HEADERS = {
   "User-Agent": "Paperweave/1.0 (+open-access retrieval)",
 };
 
+/** Downloads a PDF link, trying its better versions first (e.g. Nature's final PDF before its preview). */
 async function downloadPdf(target: string): Promise<Uint8Array> {
+  const variants = pdfUrlVariants(target); // ends with the link itself
+  for (const url of variants.slice(0, -1)) {
+    try {
+      return await downloadOnePdf(url);
+    } catch {
+      /* not there (yet): try the next version */
+    }
+  }
+  return downloadOnePdf(target);
+}
+
+async function downloadOnePdf(target: string): Promise<Uint8Array> {
   let res: Response;
   try {
     res = await safeFetch(target, { timeoutMs: 45000, headers: PDF_REQUEST_HEADERS });
@@ -203,7 +217,7 @@ export async function openAccessCandidates(workspaceId: string, paperId: string)
     ids.arxiv ? `https://arxiv.org/pdf/${ids.arxiv}` : null,
     paper.openAccessPdfUrl,
     ...(ids.doi && !ids.doi.startsWith("10.48550/") ? await scholarly().unpaywallPdfs(ids.doi) : []),
-  ].filter((u): u is string => !!u);
+  ].filter((u): u is string => serverCanFetchPdf(u));
   const sources: PdfSource[] = [...new Set(urls)].map((url) => ({ kind: "url", url }));
   if (ids.openreview && env().OPENREVIEW_USERNAME && env().OPENREVIEW_PASSWORD) {
     sources.push({ kind: "openreview", forumId: ids.openreview });
@@ -393,6 +407,21 @@ export async function streamFile(file: FileRow, rangeHeader: string | null, down
   return new Response(obj.body, { status: obj.partial ? 206 : 200, headers });
 }
 
+/** The first of these URLs that answers with a PDF (or the last one's response, whatever it is). */
+async function fetchFirstOk(urls: string[], opts: Parameters<typeof safeFetch>[1]): Promise<Response> {
+  for (const [i, url] of urls.entries()) {
+    const last = i === urls.length - 1;
+    try {
+      const res = await safeFetch(url, opts);
+      if (last || (res.ok && /pdf|octet-stream/i.test(res.headers.get("content-type") ?? ""))) return res;
+      await res.body?.cancel();
+    } catch (err) {
+      if (last) throw err;
+    }
+  }
+  throw new Error("no URL to fetch");
+}
+
 /**
  * Passes a live PDF through from its source without storing it (for sources that do not let the
  * browser load them directly). Range requests are forwarded when the source supports them.
@@ -402,7 +431,8 @@ async function streamLive(file: FileRow, rangeHeader: string | null, disposition
   let res: Response;
   try {
     if (!file.sourceUrl) throw new Error("no source");
-    res = await safeFetch(file.sourceUrl, {
+    // A better version of the link first (Nature's final PDF instead of its "article in press" preview).
+    res = await fetchFirstOk(pdfUrlVariants(file.sourceUrl), {
       timeoutMs: 120_000,
       headers: { ...PDF_REQUEST_HEADERS, ...(rangeHeader ? { Range: rangeHeader } : {}) },
     });

@@ -13,6 +13,7 @@ import { api, qs } from "@/lib/api";
 import { collectionColor } from "@/lib/collection-colors";
 import { cn } from "@/lib/cn";
 import { useCollections } from "@/lib/hooks";
+import { useCompactScreen } from "@/lib/use-compact-screen";
 import { usePersistentState } from "@/lib/use-persistent-state";
 import type { GraphNode, GraphNodeType, GraphResponse } from "@/lib/types";
 import { GraphCanvas, GraphCanvas3D } from "./graph-canvas";
@@ -126,7 +127,10 @@ export function KnowledgeGraphView() {
   const [archived, setArchived] = useState(false);
   const [collectionId, setCollectionId] = useState("");
   // 3D is the default: it keeps large graphs readable. The choice is remembered per browser.
-  const [view, setView] = usePersistentState("pw-graph-view", "3d", GRAPH_VIEWS);
+  // Until chosen: 3D on computers, 2D on phones and tablets (a 3D scene is slow there).
+  const compact = useCompactScreen();
+  const [viewChoice, setView] = usePersistentState("pw-graph-view", "auto", ["auto", ...GRAPH_VIEWS] as const);
+  const view = viewChoice === "auto" ? (compact ? "2d" : "3d") : viewChoice;
   const [colorBy, setColorBy] = usePersistentState("pw-graph-color", "type", ["type", "collection"] as const);
   // Selection resets to the focused item whenever the focus changes.
   const [selection, setSelection] = useState<{ id: string | null; focus: string | null }>({ id: focus, focus });

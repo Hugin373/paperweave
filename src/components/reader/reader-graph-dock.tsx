@@ -11,6 +11,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { api, errorMessage, qs } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import type { CitationGraphResponse, GraphEdge, GraphNode, GraphResponse } from "@/lib/types";
+import { useCompactScreen } from "@/lib/use-compact-screen";
 import { usePersistentState } from "@/lib/use-persistent-state";
 
 type Mode = "citations" | "knowledge";
@@ -62,10 +63,15 @@ function Segmented<T extends string>({
  * tab so reading is never interrupted.
  */
 export function ReaderGraphDock({ paperId }: { paperId: string }) {
-  const [open, setOpen] = usePersistentState("pw-reader-graph", "open", ["open", "closed"] as const);
+  // Until chosen, the dock starts open in 3D on computers, and closed (2D when opened) on phones and tablets,
+  // where a live 3D scene over the PDF is slow and memory-hungry.
+  const compact = useCompactScreen();
+  const [openChoice, setOpen] = usePersistentState("pw-reader-graph", "auto", ["auto", "open", "closed"] as const);
+  const open = openChoice === "auto" ? (compact ? "closed" : "open") : openChoice;
   const [size, setSize] = usePersistentState("pw-reader-graph-size", "small", ["small", "large"] as const);
   const [mode, setMode] = usePersistentState<Mode>("pw-reader-graph-mode", "citations", MODES);
-  const [dims, setDims] = usePersistentState("pw-reader-graph-dims", "3d", ["3d", "2d"] as const);
+  const [dimsChoice, setDims] = usePersistentState("pw-reader-graph-dims", "auto", ["auto", "3d", "2d"] as const);
+  const dims = dimsChoice === "auto" ? (compact ? "2d" : "3d") : dimsChoice;
   const [selected, setSelected] = useState<string | null>(null);
   const [resetNonce, setResetNonce] = useState(0);
 
