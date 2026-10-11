@@ -9,6 +9,7 @@ import { and, eq, isNull, lt, or, sql } from "drizzle-orm";
 import { db } from "@/server/db/client";
 import { libraryItems, paperIdentifiers, papers } from "@/server/db/schema";
 import { enqueueJob } from "@/server/jobs/queue";
+import { aclAnthologyPdf } from "@/server/scholarly/free-pdf";
 import { pmcidFromUrl } from "@/server/scholarly/providers/unpaywall";
 import { scholarly } from "@/server/scholarly/service";
 import { identifiersFor } from "./service";
@@ -30,6 +31,15 @@ export async function checkOpenAccess(paperId: string): Promise<string | null> {
   const ids = (await identifiersFor([paperId])).get(paperId) ?? {};
   // arXiv DOIs (10.48550) are covered by the arXiv copy.
   if (row.url || ids.arxiv || !ids.doi || ids.doi.startsWith("10.48550/")) return row.url;
+  // ACL Anthology papers are all free, at an address their DOI names.
+  const acl = aclAnthologyPdf(ids.doi);
+  if (acl) {
+    await db
+      .update(papers)
+      .set({ oaCheckedAt: new Date(), openAccessPdfUrl: sql`coalesce(${papers.openAccessPdfUrl}, ${acl})` })
+      .where(eq(papers.id, paperId));
+    return acl;
+  }
   const result = await scholarly().unpaywallCheck(ids.doi);
   if (result === null) return null; // lookups are off: check again once they are on
   const found = result.pdfs[0] ?? null;

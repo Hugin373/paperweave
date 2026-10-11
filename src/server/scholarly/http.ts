@@ -1,13 +1,34 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { ProviderError, type ProviderName } from "./types";
 
 const USER_AGENT = "Paperweave/1.0 (research knowledge workspace)";
 
-/** Enforces a minimum interval between requests to one provider (process-local). */
+const background = new AsyncLocalStorage<boolean>();
+
+/** Runs background work (jobs): its requests to scholarly sources give way to what the user is doing. */
+export function runInBackground<T>(fn: () => Promise<T>): Promise<T> {
+  return background.run(true, fn);
+}
+
+/**
+ * Enforces a minimum interval between requests to one provider (process-local). Background requests wait
+ * until the provider has had no request from the user for two intervals, so searches and pages opened while
+ * jobs run (e.g. after an import) are not stuck behind them or pushed into the provider's rate limit.
+ */
 export class Throttle {
   private next = 0;
+  private lastForeground = 0;
   constructor(private readonly minIntervalMs: number) {}
 
   async wait(): Promise<void> {
+    if (background.getStore()) {
+      const quietMs = Math.max(2 * this.minIntervalMs, 500);
+      for (let idle = Date.now() - this.lastForeground; idle < quietMs; idle = Date.now() - this.lastForeground) {
+        await new Promise((r) => setTimeout(r, quietMs - idle));
+      }
+    } else {
+      this.lastForeground = Date.now();
+    }
     const now = Date.now();
     const at = Math.max(now, this.next);
     this.next = at + this.minIntervalMs;

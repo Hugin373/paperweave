@@ -87,6 +87,7 @@ export class ScholarlyService {
   ): Promise<T | null> {
     const failures: Failure[] = [];
     let fallback: T | null = null;
+    let limitedBeforeFallback = false;
     for (const provider of providers) {
       if (this.breaker.isOpen(provider.name)) {
         failures.push({
@@ -100,7 +101,10 @@ export class ScholarlyService {
       try {
         const value = await fn(provider);
         if (acceptable(value)) return value;
-        fallback ??= value;
+        if (fallback === null) {
+          fallback = value;
+          limitedBeforeFallback = failures.some((f) => f.kind === "rate_limited");
+        }
       } catch (err) {
         if (!(err instanceof ProviderError)) throw err;
         const quota = err.kind === "rate_limited" && (err.retryAfterSeconds ?? 0) >= QUOTA_RETRY_SECONDS;
@@ -115,9 +119,11 @@ export class ScholarlyService {
         } else if (err.kind === "unavailable") this.breaker.trip(provider.name, 20);
       }
     }
-    if (fallback !== null) return fallback;
+    // An empty answer is not trusted when a source before it was rate limited: for a venue only Semantic
+    // Scholar knows (e.g. MICCAI), "no results" from the fallback would be wrong; "try again" is right.
+    if (fallback !== null && !limitedBeforeFallback) return fallback;
     if (failures.length) throw new ScholarlyUnavailableError(failures);
-    return null;
+    return fallback;
   }
 
   /** arXiv preprints with (about) this title; [] when arXiv is unavailable. */

@@ -21,6 +21,47 @@ export const EMPTY_FILTERS: SearchFilterValues = {
   type: "",
 };
 
+/**
+ * Offered while typing a venue. Short names work (the server knows their full names), as do journal names
+ * and publishers ("Frontiers", "Springer Nature", "IEEE": all their journals).
+ */
+const VENUE_SUGGESTIONS = [
+  "CVPR",
+  "ICCV",
+  "ECCV",
+  "MICCAI",
+  "NeurIPS",
+  "ICML",
+  "ICLR",
+  "AAAI",
+  "IJCAI",
+  "ACL",
+  "EMNLP",
+  "NAACL",
+  "KDD",
+  "ICRA",
+  "IROS",
+  "CHI",
+  "TPAMI",
+  "IJCV",
+  "Medical Image Analysis",
+  "IEEE Transactions on Medical Imaging",
+  "Nature",
+  "Science",
+  "Cell",
+  "Nature Communications",
+  "Scientific Reports",
+  "PNAS",
+  "The Lancet",
+  "NEJM",
+  "Frontiers",
+  "Springer Nature",
+  "IEEE",
+  "Elsevier",
+  "MDPI",
+  "PLOS ONE",
+];
+
 export function countFilters(f: SearchFilterValues) {
   return [f.yearFrom, f.yearTo, f.oa ? "1" : "", f.minCitations, f.venue, f.type].filter(Boolean).length;
 }
@@ -69,10 +110,16 @@ export function SearchFilters({
       <Field label="Venue" htmlFor="f-venue">
         <Input
           id="f-venue"
-          placeholder="e.g. CVPR, Nature"
+          placeholder="e.g. MICCAI, ACL, Nature, Frontiers"
+          list="f-venue-suggestions"
           value={value.venue}
           onChange={(e) => set({ venue: e.target.value })}
         />
+        <datalist id="f-venue-suggestions">
+          {VENUE_SUGGESTIONS.map((v) => (
+            <option key={v} value={v} />
+          ))}
+        </datalist>
       </Field>
       <Field label="Publication type" htmlFor="f-type">
         <Select id="f-type" value={value.type} onChange={(e) => set({ type: e.target.value })}>

@@ -7,6 +7,8 @@ import {
   normalizePmid,
   normalizeTitle,
 } from "@/lib/identifiers";
+import { aclAnthologyPdf } from "../free-pdf";
+import { venueNames } from "../venues";
 import { providerFetch, Throttle } from "../http";
 import { normalizePublicationType } from "../publication-types";
 import type {
@@ -94,6 +96,50 @@ export function rebuildAbstract(index: Record<string, number[]> | null | undefin
   return text || null;
 }
 
+/** A source (journal, conference) or publisher from OpenAlex's lists. */
+interface OAVenue {
+  id: string;
+  display_name?: string | null;
+  abbreviated_title?: string | null;
+  alternate_titles?: string[] | null;
+  works_count?: number | null;
+}
+
+const venueKey = (s: string) => normalizeTitle(s.replace(/&/g, " and ")).replace(/^the /, "").trim();
+
+/**
+ * Which OpenAlex sources or publishers a typed venue means (ids, most works first). "exact": a name, short
+ * name or alternate name equals it ("ECCV", "Nature"). "publisher": a publisher named by it ("Frontiers" →
+ * Frontiers Media SA, "IEEE" → Institute of Electrical and Electronics Engineers). "similar": names that
+ * contain all its words ("frontiers aging" → Frontiers in Aging Neuroscience).
+ */
+export function pickVenues(input: string, venues: OAVenue[], how: "exact" | "publisher" | "similar"): string[] {
+  const want = venueKey(input);
+  if (!want) return [];
+  // "Annual Meeting of the Association for Computational Linguistics (ACL)" also goes by its name without the
+  // bracket, and by "ACL".
+  const names = (v: OAVenue) =>
+    [v.display_name, v.abbreviated_title, ...(v.alternate_titles ?? [])]
+      .filter((n): n is string => !!n)
+      .flatMap((n) => {
+        const m = /^(.*?)\s*\(([^()]+)\)\s*$/.exec(n);
+        return m ? [n, m[1], m[2]] : [n];
+      })
+      .map(venueKey);
+  const words = want.split(" ");
+  const matches = venues.filter((v) => {
+    const all = names(v);
+    if (how === "exact") return all.includes(want);
+    if (how === "publisher") return all.some((n) => n === want || n.startsWith(`${want} `));
+    return all.some((n) => words.every((w) => n.split(" ").includes(w)));
+  });
+  return matches
+    .sort((a, b) => (b.works_count ?? 0) - (a.works_count ?? 0))
+    .slice(0, how === "similar" ? 20 : 10)
+    .map((v) => v.id.split("/").pop()!)
+    .filter(Boolean);
+}
+
 function arxivFromWork(w: OAWork): string | null {
   const fromDoi = w.doi && /10\.48550\/arxiv\./i.test(w.doi) ? normalizeArxivId(w.doi) : null;
   if (fromDoi) return fromDoi;
@@ -131,7 +177,7 @@ export function mapOpenAlexWork(w: OAWork): NormalizedPaper | null {
     (arxiv ? `https://arxiv.org/pdf/${arxiv}` : null) ??
     w.best_oa_location?.pdf_url ??
     (w.locations ?? []).find((l) => l.is_oa && l.pdf_url)?.pdf_url ??
-    null;
+    aclAnthologyPdf(doi);
 
   return {
     source: "openalex",
@@ -200,13 +246,36 @@ export class OpenAlexProvider implements ScholarlyProvider {
     });
   }
 
-  private async resolveVenueSourceId(venue: string): Promise<string | null> {
-    const data = await this.get<{ results?: { id: string }[] }>("/sources", {
+  /**
+   * The works filter for a venue: the journals or conferences it names, all journals of a publisher it
+   * names ("Frontiers", "Springer Nature", "IEEE"), or else the journals whose names contain it.
+   */
+  private async venueFilter(venue: string): Promise<string | null> {
+    const findSources = async (name: string) =>
+      (
+        await this.get<{ results?: OAVenue[] }>("/sources", {
+          search: name,
+          "per-page": "50",
+          select: "id,display_name,abbreviated_title,alternate_titles,works_count",
+        })
+      )?.results ?? [];
+    const [typed, ...fullNames] = venueNames(venue);
+    const sources = await findSources(typed);
+    // A known short name ("NeurIPS", "ACL") is matched through the full names it stands for first: as a bare
+    // abbreviation it may also be another journal's ("ACL" is also Advanced Chemistry Letters).
+    const exact = new Set<string>();
+    for (const name of fullNames) for (const id of pickVenues(name, await findSources(name), "exact")) exact.add(id);
+    if (!exact.size) for (const id of pickVenues(typed, sources, "exact")) exact.add(id);
+    if (exact.size) return `primary_location.source.id:${[...exact].slice(0, 20).join("|")}`;
+    const publishers = await this.get<{ results?: OAVenue[] }>("/publishers", {
       search: venue,
-      "per-page": "1",
-      select: "id",
+      "per-page": "10",
+      select: "id,display_name,alternate_titles,works_count",
     });
-    return data?.results?.[0]?.id.split("/").pop() ?? null;
+    const publisher = pickVenues(venue, publishers?.results ?? [], "publisher")[0];
+    if (publisher) return `primary_location.source.publisher_lineage:${publisher}`;
+    const similar = pickVenues(venue, sources, "similar");
+    return similar.length ? `primary_location.source.id:${similar.join("|")}` : null;
   }
 
   private async resolveAuthorId(name: string): Promise<string | null> {
@@ -230,9 +299,9 @@ export class OpenAlexProvider implements ScholarlyProvider {
     if (f.publicationType && OA_TYPE[f.publicationType]) filters.push(`type:${OA_TYPE[f.publicationType]}`);
     if (f.publicationType === "conference") filters.push("primary_location.source.type:conference");
     if (f.venue) {
-      const sourceId = await this.resolveVenueSourceId(f.venue);
-      if (!sourceId) return { provider: this.name, papers: [], total: 0 };
-      filters.push(`primary_location.source.id:${sourceId}`);
+      const venueFilter = await this.venueFilter(f.venue);
+      if (!venueFilter) return { provider: this.name, papers: [], total: 0 };
+      filters.push(venueFilter);
     }
 
     const params: Record<string, string> = {

@@ -6,6 +6,7 @@ import { jobs } from "@/server/db/schema";
 import { exportBibtex, exportJson, exportMarkdownZip } from "@/server/export/export";
 import { runImport, startBibtexImport, startIdentifierImport } from "@/server/import/import";
 import { claimJob, enqueueJob, failJob, getWorkspaceJob } from "@/server/jobs/queue";
+import { ScholarlyUnavailableError } from "@/server/scholarly/service";
 import { runOneJob } from "@/server/jobs/worker";
 import { createConcept, linkPaper } from "@/server/knowledge/concepts";
 import { createNote } from "@/server/knowledge/notes";
@@ -145,5 +146,30 @@ describe("background jobs", () => {
     [row] = await db.select().from(jobs).where(eq(jobs.id, first!));
     expect(row).toMatchObject({ status: "failed", attempts: 2, lastError: "still failing" });
     expect(await runOneJob()).toBe(false);
+  });
+  it("waits out a scholarly source's rate limit instead of giving up", async () => {
+    await db.delete(jobs);
+    const id = await enqueueJob({ type: "unknown_job", maxAttempts: 1 });
+    const claimed = (await claimJob())!;
+    const limited = new ScholarlyUnavailableError([
+      { provider: "semantic_scholar", kind: "rate_limited", message: "cooling down", quota: false },
+    ]);
+    await failJob(claimed, limited);
+    let [row] = await db.select().from(jobs).where(eq(jobs.id, id!));
+    expect(row.status).toBe("queued"); // past maxAttempts, but rate limits get extra tries
+    expect(row.runAt.getTime() - Date.now()).toBeGreaterThan(100_000); // minutes, not seconds
+
+    // A used-up daily quota is not waited out.
+    await db
+      .update(jobs)
+      .set({ runAt: new Date(0) })
+      .where(eq(jobs.id, id!));
+    const again = (await claimJob())!;
+    await failJob(
+      again,
+      new ScholarlyUnavailableError([{ provider: "openalex", kind: "rate_limited", message: "quota", quota: true }]),
+    );
+    [row] = await db.select().from(jobs).where(eq(jobs.id, id!));
+    expect(row.status).toBe("failed");
   });
 });

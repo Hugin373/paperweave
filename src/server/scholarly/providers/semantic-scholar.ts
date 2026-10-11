@@ -1,4 +1,6 @@
 import { normalizeArxivId, normalizeDoi } from "@/lib/identifiers";
+import { aclAnthologyPdf } from "../free-pdf";
+import { venueNames } from "../venues";
 import { providerFetch, Throttle } from "../http";
 import { normalizePublicationType } from "../publication-types";
 import type {
@@ -95,7 +97,7 @@ export function mapS2Paper(p: S2Paper): NormalizedPaper | null {
   if (ext.PubMed) ids.pmid = String(ext.PubMed);
   if (ext.PubMedCentral) ids.pmcid = `PMC${String(ext.PubMedCentral).replace(/^PMC/i, "")}`;
   if (ext.CorpusId) ids.corpus = String(ext.CorpusId);
-  const pdf = p.openAccessPdf?.url?.trim();
+  const pdf = p.openAccessPdf?.url?.trim() || aclAnthologyPdf(doi, ext.ACL ? String(ext.ACL) : null);
   return {
     source: "semantic_scholar",
     ids,
@@ -176,7 +178,8 @@ export class SemanticScholarProvider implements ScholarlyProvider {
     if (f.yearFrom || f.yearTo) params.set("year", `${f.yearFrom ?? ""}-${f.yearTo ?? ""}`);
     if (f.openAccessOnly) params.set("openAccessPdf", "");
     if (f.minCitations) params.set("minCitationCount", String(f.minCitations));
-    if (f.venue) params.set("venue", f.venue);
+    // Semantic Scholar matches any venue in a comma-separated list: the typed name and its full names.
+    if (f.venue) params.set("venue", venueNames(f.venue).join(","));
     if (f.publicationType && S2_TYPE[f.publicationType]) params.set("publicationTypes", S2_TYPE[f.publicationType]);
 
     const data = await this.get<{ total?: number; data?: S2Paper[] }>(`/paper/search?${params}`);
@@ -212,7 +215,8 @@ export class SemanticScholarProvider implements ScholarlyProvider {
     if (f.yearFrom || f.yearTo) params.set("year", `${f.yearFrom ?? ""}-${f.yearTo ?? ""}`);
     if (f.openAccessOnly) params.set("openAccessPdf", "");
     if (f.minCitations) params.set("minCitationCount", String(f.minCitations));
-    if (f.venue) params.set("venue", f.venue);
+    // Semantic Scholar matches any venue in a comma-separated list: the typed name and its full names.
+    if (f.venue) params.set("venue", venueNames(f.venue).join(","));
     if (f.publicationType && S2_TYPE[f.publicationType]) params.set("publicationTypes", S2_TYPE[f.publicationType]);
 
     const key = params.toString();

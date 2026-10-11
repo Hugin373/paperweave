@@ -3,6 +3,7 @@
  */
 import { purgeExpiredCache } from "@/server/scholarly/cache";
 import { claimJob, completeJob, enqueueJob, failJob, type JobRow } from "./queue";
+import { runInBackground } from "@/server/scholarly/http";
 
 type JobHandler = (job: JobRow) => Promise<unknown>;
 
@@ -73,7 +74,7 @@ export async function runOneJob(): Promise<boolean> {
   const handler = handlers[job.type];
   try {
     if (!handler) throw new Error(`Unknown job type: ${job.type}`);
-    await completeJob(job.id, await handler(job));
+    await completeJob(job.id, await runInBackground(() => handler(job)));
   } catch (err) {
     console.error(`[jobs] ${job.type} #${job.id} failed (attempt ${job.attempts})`, err);
     await failJob(job, err);

@@ -69,10 +69,24 @@ export async function completeJob(id: number, result: unknown) {
     .where(eq(jobs.id, id));
 }
 
+/** A scholarly source refused because of its rate limit: worth waiting out rather than giving up. */
+function rateLimited(error: unknown): boolean {
+  const e = error as { name?: string; kind?: string; failures?: { kind?: string; quota?: boolean }[] } | null;
+  if (e?.name === "ProviderError") return e.kind === "rate_limited";
+  return e?.name === "ScholarlyUnavailableError" && !!e.failures?.some((f) => f.kind === "rate_limited" && !f.quota);
+}
+
+/** Extra tries for jobs held up by rate limits, spread over about four hours. */
+const RATE_LIMIT_RETRIES = 10;
+
 export async function failJob(job: JobRow, error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
-  const retry = job.attempts < job.maxAttempts;
-  const backoffSeconds = Math.min(30 * 2 ** (job.attempts - 1), 3600);
+  const waitOut = rateLimited(error);
+  const retry = job.attempts < job.maxAttempts + (waitOut ? RATE_LIMIT_RETRIES : 0);
+  // Rate limits clear within minutes: wait 2, 4, 8… up to 30 minutes; other failures back off from 30 s.
+  const backoffSeconds = waitOut
+    ? Math.min(120 * 2 ** Math.max(0, job.attempts - 1), 1800)
+    : Math.min(30 * 2 ** (job.attempts - 1), 3600);
   await db
     .update(jobs)
     .set({

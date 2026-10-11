@@ -72,4 +72,22 @@ describe("search robustness", () => {
     ]);
     expect(versions).toHaveLength(2);
   });
+  it("says to try again, not 'no results', when the main source is rate limited and the next finds nothing", async () => {
+    const { installFakeScholarly, FakeProvider, createUser } = await import("./helpers");
+    const { discover } = await import("@/server/papers/discovery");
+    const { ScholarlyUnavailableError } = await import("@/server/scholarly/service");
+    const ctx = await createUser("Venue searcher");
+    const s2 = new FakeProvider("semantic_scholar", []);
+    s2.failWith = "rate_limited";
+    await installFakeScholarly(s2, new FakeProvider("openalex", []));
+    const input = { q: "segmentation", mode: "all" as const, filters: { venue: "MICCAI" }, offset: 0, limit: 20 };
+    await expect(discover(ctx.workspaceId, input)).rejects.toBeInstanceOf(ScholarlyUnavailableError);
+
+    // When the main source answers with nothing, that answer stands even if the next one is limited.
+    const empty = new FakeProvider("semantic_scholar", []);
+    const limited = new FakeProvider("openalex", []);
+    limited.failWith = "rate_limited";
+    await installFakeScholarly(empty, limited);
+    expect((await discover(ctx.workspaceId, { ...input, q: "nothing here" })).items).toEqual([]);
+  });
 });
