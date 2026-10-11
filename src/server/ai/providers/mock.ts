@@ -77,6 +77,13 @@ export class MockProvider implements AIProvider {
       });
       return;
     }
+    if (req.system.startsWith("You suggest literature searches")) {
+      yield JSON.stringify({
+        related: [{ query: "mock next step search", why: "[mock] extends your library" }],
+        neighbouring: [{ query: "mock neighbouring field search", field: "Mock field", why: "[mock] borrowed idea" }],
+      });
+      return;
+    }
     if (/Return JSON/i.test(req.system) && req.system.includes(`"query"`)) {
       const q = /Question:\s*(.+)/.exec(last)?.[1] ?? last;
       yield JSON.stringify({

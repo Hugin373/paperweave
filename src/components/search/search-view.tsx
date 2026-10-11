@@ -1,12 +1,13 @@
 "use client";
 
-import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   BellRing,
   ArrowRight,
   Clock,
   Fingerprint,
   Library,
+  RefreshCw,
   Search,
   SlidersHorizontal,
   Sparkles,
@@ -33,7 +34,13 @@ import { formatAuthors } from "@/lib/format";
 import { useAiConfig, useAiEnabled } from "@/lib/hooks";
 import { detectIdentifier, identifierLabel } from "@/lib/identifiers";
 import { looksLikeQuestion } from "@/lib/query";
-import type { LibraryResponse, PaperSummary, SearchResponse } from "@/lib/types";
+import type {
+  LibraryResponse,
+  PaperSummary,
+  SearchResponse,
+  TopicSuggestion,
+  TopicSuggestionsResponse,
+} from "@/lib/types";
 import { countFilters, EMPTY_FILTERS, SearchFilters, type SearchFilterValues } from "./filters";
 import { Onboarding } from "./onboarding";
 import { useStartResearch } from "@/components/research/use-research";
@@ -77,6 +84,131 @@ function filtersFromParams(p: URLSearchParams): SearchFilterValues {
     venue: p.get("venue") ?? "",
     type: p.get("type") ?? "",
   };
+}
+
+/**
+ * The start card: searches from the user's own library, AI ideas close to their work and from neighbouring
+ * fields (made in the background), or general examples for a new library.
+ */
+function StartTopics({ onPick }: { onPick: (query: string) => void }) {
+  const qc = useQueryClient();
+  const { data } = useQuery({
+    queryKey: ["topic-suggestions"],
+    queryFn: () => api<TopicSuggestionsResponse>("/api/search/suggestions"),
+    staleTime: 60_000,
+    // While new ideas are being thought up, look again every few seconds.
+    refetchInterval: (query) => (query.state.data?.ai.status === "pending" ? 6000 : false),
+  });
+  const refresh = useMutation({
+    mutationFn: () => api("/api/search/suggestions", { method: "POST" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["topic-suggestions"] }),
+    onError: (err) => toast.error(errorMessage(err)),
+  });
+  const ai = data?.ai;
+  const all = [...(data?.library ?? []), ...(ai?.items ?? [])];
+  const of = (kind: TopicSuggestion["kind"]) => all.filter((s) => s.kind === kind);
+  const library = of("library");
+  const aiOn = !!ai && ai.status !== "off";
+  const personal = all.length > 0 || aiOn;
+  const chip =
+    "max-w-full truncate rounded-full border border-border bg-surface-2/60 px-3 py-1.5 text-left text-[13px] text-muted hover:border-border-strong hover:text-text";
+  const heading = "mb-2 text-[12px] font-medium tracking-wide text-subtle uppercase";
+
+  const chips = (title: string, items: TopicSuggestion[]) =>
+    items.length > 0 && (
+      <div>
+        <h3 className={heading}>{title}</h3>
+        <div className="flex flex-wrap gap-2">
+          {items.map((s) => (
+            <button key={s.query} type="button" title={s.why} onClick={() => onPick(s.query)} className={chip}>
+              {s.query}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  const cards = (title: string, items: TopicSuggestion[]) =>
+    items.length > 0 && (
+      <div>
+        <h3 className={heading}>{title}</h3>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {items.map((s) => (
+            <button
+              key={s.query}
+              type="button"
+              onClick={() => onPick(s.query)}
+              className="rounded-lg border border-border bg-surface-2/40 px-3 py-2 text-left hover:border-border-strong"
+            >
+              <span className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                <span className="text-[13.5px] font-medium text-text">{s.query}</span>
+                {s.field && <Badge>{s.field}</Badge>}
+                {s.ai && <Sparkles className="size-3 self-center text-ai" aria-label="AI idea" />}
+              </span>
+              {s.why && <span className="mt-0.5 block text-[12.5px] text-muted">{s.why}</span>}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+
+  return (
+    <section aria-labelledby="examples-title" className="space-y-4 rounded-xl border border-border bg-surface p-5">
+      <div className="flex items-center gap-2">
+        <h2 id="examples-title" className="text-sm font-semibold">
+          Start with a topic, a question, or a paper you know
+        </h2>
+        {aiOn && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="ml-auto"
+            disabled={ai.status === "pending"}
+            loading={refresh.isPending}
+            onClick={() => refresh.mutate()}
+            title="Ask the AI for fresh ideas from your library"
+          >
+            <RefreshCw />
+            New ideas
+          </Button>
+        )}
+      </div>
+      {!personal ? (
+        <div className="flex flex-wrap gap-2">
+          {EXAMPLES.map((ex) => (
+            <button key={ex} type="button" onClick={() => onPick(ex)} className={chip}>
+              {ex}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <>
+          {chips("From your library", library)}
+          {aiOn && ai.status === "pending" && !ai.items.length ? (
+            <div>
+              <h3 className={heading}>Ideas for your research</h3>
+              <p className="mb-2 flex items-center gap-1.5 text-[12.5px] text-muted">
+                <Sparkles className="size-3.5 text-ai" aria-hidden />
+                Thinking of ideas from your library…
+              </p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {[0, 1].map((i) => (
+                  <Skeleton key={i} className="h-14 rounded-lg" />
+                ))}
+              </div>
+            </div>
+          ) : (
+            cards("Ideas for your research", of("related"))
+          )}
+          {cards(
+            "Neighbouring fields worth knowing",
+            [...of("neighbouring").filter((s) => s.ai), ...of("neighbouring").filter((s) => !s.ai)].slice(0, 6),
+          )}
+          {chips("Your papers build on", of("builds_on"))}
+          {chips("Recent work citing your papers", of("cited_by"))}
+        </>
+      )}
+    </section>
+  );
 }
 
 /** Papers marked "Reading", most recently touched first: where to pick up. */
@@ -475,26 +607,12 @@ export function SearchView() {
       {!q && (
         <>
           <Onboarding />
-          <section aria-labelledby="examples-title" className="rounded-xl border border-border bg-surface p-5">
-            <h2 id="examples-title" className="text-sm font-semibold">
-              Start with a topic, a question, or a paper you know
-            </h2>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {EXAMPLES.map((ex) => (
-                <button
-                  key={ex}
-                  type="button"
-                  onClick={() => {
-                    setInput(ex);
-                    submit(ex);
-                  }}
-                  className="rounded-full border border-border bg-surface-2/60 px-3 py-1.5 text-left text-[13px] text-muted hover:border-border-strong hover:text-text"
-                >
-                  {ex}
-                </button>
-              ))}
-            </div>
-          </section>
+          <StartTopics
+            onPick={(query) => {
+              setInput(query);
+              submit(query);
+            }}
+          />
           <ReadingPapers />
           <RecentPapers />
         </>

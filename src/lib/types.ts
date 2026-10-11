@@ -701,6 +701,31 @@ export interface ResearchThreadDto {
 export type AlertSource = "general" | "biomedical" | "openreview" | "arxiv";
 
 /** A saved search that runs daily, with how many of its papers are new. */
+/** A suggested literature search on the search page. */
+export interface TopicSuggestion {
+  query: string;
+  why: string;
+  /**
+   * library: the user's concepts and collections; builds_on: papers their library often cites; cited_by: recent
+   * papers citing theirs; neighbouring: other fields connected to theirs; related: ideas for their research.
+   */
+  kind: "library" | "builds_on" | "cited_by" | "neighbouring" | "related";
+  /** neighbouring: the other field, in a few words. */
+  field?: string;
+  /** Thought up by the AI (the others come from the library and its citations). */
+  ai?: boolean;
+}
+
+export interface TopicSuggestionsResponse {
+  library: TopicSuggestion[];
+  ai: {
+    /** off: no AI set up; pending: being thought up in the background (older ideas may be shown meanwhile). */
+    status: "off" | "pending" | "ready" | "error";
+    items: TopicSuggestion[];
+    generatedAt: string | null;
+  };
+}
+
 export interface SavedSearchDto {
   id: string;
   query: string;

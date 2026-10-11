@@ -62,6 +62,10 @@ const handlers: Record<string, JobHandler> = {
     const { queueAllSavedSearches } = await import("@/server/alerts/service");
     return { queued: await queueAllSavedSearches() };
   },
+  async topic_suggestions(job) {
+    const { generateTopicSuggestions } = await import("@/server/search/suggestions");
+    return generateTopicSuggestions((job.payload as { workspaceId: string }).workspaceId);
+  },
   async embed_backfill() {
     const { queueEmbeddingBackfill } = await import("@/server/embeddings/queue");
     return { queued: await queueEmbeddingBackfill() };
