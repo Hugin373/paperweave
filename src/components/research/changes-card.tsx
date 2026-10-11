@@ -2,8 +2,10 @@
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
+  BellOff,
   BellRing,
   BookCheck,
+  BookX,
   BookmarkPlus,
   Check,
   CircleAlert,
@@ -20,6 +22,8 @@ import {
   NotebookPen,
   PencilLine,
   Tag,
+  TagsIcon,
+  Trash2,
   Unlink,
   Waypoints,
   Undo2,
@@ -33,6 +37,7 @@ import { Button } from "@/components/ui/button";
 import { api, errorMessage } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { useInvalidateLibrary } from "@/lib/mutations";
+import { DESTRUCTIVE_CHANGE_KINDS } from "@/lib/types";
 import type {
   ChangeKind,
   ChangeSet,
@@ -63,10 +68,26 @@ const KIND_ICON: Record<ChangeKind, LucideIcon> = {
   add_highlight: Highlighter,
   save_search: BellRing,
   start_screening: ListChecks,
+  edit_collection: PencilLine,
+  delete_collection: Trash2,
+  untag_papers: TagsIcon,
+  rename_tag: PencilLine,
+  delete_tag: Trash2,
+  edit_concept: PencilLine,
+  delete_concept: Trash2,
+  remove_from_library: BookX,
+  stop_following: BellOff,
 };
 
 /** Kinds whose name can be edited before applying (for a rename: the new name). */
-const NAMED: ChangeKind[] = ["create_collection", "create_concept", "create_note", "rename_concept"];
+const NAMED: ChangeKind[] = [
+  "create_collection",
+  "create_concept",
+  "create_note",
+  "rename_concept",
+  "edit_collection",
+  "rename_tag",
+];
 
 /** A proposed note edit, block by block: what goes and what comes, for review before applying. */
 function NoteEdits({ edits }: { edits: NonNullable<ProposedChange["edits"]> }) {
@@ -263,7 +284,13 @@ export function ChangesCard({
                     (c.status === "undone" || c.status === "skipped") && "line-through",
                   )}
                 >
-                  <Icon className="mt-0.5 size-3.5 shrink-0 text-muted" aria-hidden />
+                  <Icon
+                    className={cn(
+                      "mt-0.5 size-3.5 shrink-0",
+                      DESTRUCTIVE_CHANGE_KINDS.includes(c.kind) ? "text-danger" : "text-muted",
+                    )}
+                    aria-hidden
+                  />
                   <span>
                     {c.label}
                     {c.priority && <PriorityBadge priority={c.priority} />}

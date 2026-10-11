@@ -143,6 +143,29 @@ C. Cleaning up — each is a different action; propose only what the user asked 
 3. Propose start_screening with the title, criteria and the collection or papers ("use_full_text" only when abstracts are not enough; it is slower).
 4. It runs in the background. Later, read_screening reports progress and the included and "maybe" papers with reasons; the user reviews and overrides decisions on the screening page, and can save the included papers as a collection.`,
   },
+  {
+    name: "stay-current",
+    title: "Following topics and triaging new papers",
+    when: "the user asks what is new, to follow a topic or keep up with a field, to go through their New papers, or which new papers matter for them",
+    steps: `1. read_new_papers to see what the user follows and how many new papers each topic has; then read_new_papers with "search" for the topics in question (new papers come first, with abstracts).
+2. Judge each new paper against the user's work, not in general: search_library / related_in_library / find_saved_papers (with "abstracts": true) show what they already have and care about. A new paper matters when it extends, challenges or directly competes with papers they saved, or fills a gap in a collection.
+3. Answer with a short ranked list: what is worth reading now (and why, citing the related saved papers), what is merely related, and what can be skipped. Be honest when nothing stands out.
+4. Propose only what the user asked for: save_papers (status "saved" or "reading") for the papers they want, add_to_collection where they fit.
+5. Following topics: for "keep me up to date on X" propose save_search (source "arxiv" for the latest preprints, "biomedical" or "openreview" when the field calls for it; one focused query per topic, as a researcher would search). For setting up several from the library, derive one query per main collection or concept. Suggest stop_following for topics that keep bringing irrelevant papers — only propose it when the user agrees.`,
+  },
+  {
+    name: "library-cleanup",
+    title: "Cleaning up the library",
+    when: "the user asks to tidy, clean up, deduplicate or reorganize their library, collections, tags or concepts",
+    steps: `1. Look before proposing: list_workspace (collections, tags, concepts with counts), list_concepts, and find_saved_papers with in_collection false / has_concepts false (and "abstracts": true) for papers left out.
+2. Find the problems, and report them in the reply even when you propose nothing:
+   - Tags that mean the same ("survey" / "surveys" / "review"): rename_tag the clearest, then tag_papers + untag_papers to move papers onto it; delete_tag the empty leftovers only if the user wants them gone.
+   - Concepts that duplicate each other: merge_concepts (never delete them); vague concepts: edit_concept or rename_concept.
+   - Collections that overlap or are badly named: edit_collection (name, description); move papers with add_to_collection / remove_from_collection.
+   - Papers in no collection, or without concepts: suggest where they belong.
+   - Empty or one-paper collections and concepts: suggest merging them into a broader one.
+3. Propose the safe fixes (renames, descriptions, moves, merges). Deleting (delete_collection, delete_tag, delete_concept, remove_from_library) only for what the user explicitly asked to delete; otherwise list candidates in the reply and let them decide.`,
+  },
 ];
 
 /** The list the planner sees: name, title and when to use each playbook. */

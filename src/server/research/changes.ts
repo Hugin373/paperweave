@@ -31,6 +31,7 @@ import {
   paperConcepts,
   paperFiles,
   paperTags,
+  savedSearches,
   tags,
 } from "@/server/db/schema";
 import { createSavedSearch, deleteSavedSearch } from "@/server/alerts/service";
@@ -54,9 +55,20 @@ import {
   collectionPaperIds,
   createCollection,
   deleteCollection,
+  deleteTag,
   removeFromCollection,
   tagPapers,
+  updateCollection,
+  updateTag,
 } from "@/server/library/organize";
+import {
+  restoreSnapshot,
+  snapshotCollection,
+  snapshotConcept,
+  snapshotLibrary,
+  snapshotSavedSearch,
+  snapshotTag,
+} from "./removal";
 import { applyBlockEdits, planBlockEdits, type PlannedEdit } from "./note-blocks";
 import type { SourceRegistry } from "./tools";
 
@@ -173,6 +185,20 @@ export const changeActionSchema = z.discriminatedUnion("tool", [
       .min(1)
       .max(40),
   }),
+  z.object({
+    tool: z.literal("edit_collection"),
+    collection: name,
+    name: name.optional(),
+    description: z.string().trim().max(500).optional(),
+  }),
+  z.object({ tool: z.literal("delete_collection"), collection: name }),
+  z.object({ tool: z.literal("untag_papers"), tags: z.array(name).min(1).max(10), papers }),
+  z.object({ tool: z.literal("rename_tag"), tag: name, name }),
+  z.object({ tool: z.literal("delete_tag"), tag: name }),
+  z.object({ tool: z.literal("edit_concept"), concept: name, description: z.string().trim().min(1).max(500) }),
+  z.object({ tool: z.literal("delete_concept"), concept: name }),
+  z.object({ tool: z.literal("remove_from_library"), papers }),
+  z.object({ tool: z.literal("stop_following"), query: z.string().trim().min(2).max(300) }),
 ]);
 export type ChangeAction = z.infer<typeof changeActionSchema>;
 
@@ -198,6 +224,33 @@ async function collectionByName(workspaceId: string, n: string) {
     .select()
     .from(collections)
     .where(and(eq(collections.workspaceId, workspaceId), sql`lower(${collections.name}) = ${n.toLowerCase()}`));
+  return row ?? null;
+}
+
+async function tagByName(workspaceId: string, n: string) {
+  const wanted = n.replace(/^#/, "").trim().toLowerCase();
+  const [row] = await db
+    .select()
+    .from(tags)
+    .where(and(eq(tags.workspaceId, workspaceId), sql`lower(${tags.name}) = ${wanted}`));
+  return row ?? null;
+}
+
+async function tagPaperIds(tagId: string) {
+  const rows = await db.select({ id: paperTags.paperId }).from(paperTags).where(eq(paperTags.tagId, tagId));
+  return rows.map((r) => r.id);
+}
+
+async function savedSearchByQuery(workspaceId: string, query: string) {
+  const [row] = await db
+    .select()
+    .from(savedSearches)
+    .where(
+      and(
+        eq(savedSearches.workspaceId, workspaceId),
+        sql`lower(${savedSearches.query}) = ${query.trim().replace(/\s+/g, " ").toLowerCase()}`,
+      ),
+    );
   return row ?? null;
 }
 
@@ -696,6 +749,162 @@ export async function proposeChange(
       };
       return { change, message: `Proposed change: ${change.label}.` };
     }
+    case "edit_collection": {
+      const found = await collectionByName(workspaceId, action.collection);
+      if (!found) return { message: `Not proposed: there is no collection “${action.collection}”.` };
+      const newName = action.name?.trim();
+      const renaming = !!newName && newName !== found.name;
+      if (renaming) {
+        const taken = await collectionByName(workspaceId, newName);
+        if (taken && taken.id !== found.id) return { message: `Not proposed: “${taken.name}” already exists.` };
+      }
+      const describing = action.description !== undefined && action.description !== found.description;
+      if (!renaming && !describing) return { message: "Not proposed: nothing would change." };
+      const what = [renaming && `rename it to “${newName}”`, describing && "update its description"]
+        .filter(Boolean)
+        .join(" and ");
+      const change: ProposedChange = {
+        id: randomUUID(),
+        kind: "edit_collection",
+        label: `Your collection “${found.name}”: ${what}`,
+        paperIds: [],
+        name: renaming ? newName : found.name,
+        fromNames: [found.name],
+        ...(describing ? { description: action.description } : {}),
+        status: "proposed",
+      };
+      return { change, message: `Proposed change: ${change.label}.` };
+    }
+    case "delete_collection": {
+      const found = await collectionByName(workspaceId, action.collection);
+      if (!found) return { message: `Not proposed: there is no collection “${action.collection}”.` };
+      const count = (await collectionPaperIds(found.id)).length;
+      const change: ProposedChange = {
+        id: randomUUID(),
+        kind: "delete_collection",
+        label: `Delete your collection “${found.name}” (its ${plural(count, "paper")} stay in your library)`,
+        paperIds: [],
+        name: found.name,
+        status: "proposed",
+      };
+      return { change, message: `Proposed change: ${change.label}. Ask before deleting unless the user asked for it.` };
+    }
+    case "untag_papers": {
+      const found = (await Promise.all(action.tags.map((t) => tagByName(workspaceId, t)))).filter(
+        (t): t is NonNullable<typeof t> => !!t,
+      );
+      if (!found.length)
+        return { message: `Not proposed: there is no tag ${action.tags.map((t) => `#${t}`).join(", ")}.` };
+      const tagged = new Set((await Promise.all(found.map((t) => tagPaperIds(t.id)))).flat());
+      const inside = ids.filter((id) => tagged.has(id));
+      if (!inside.length) return { message: "Not proposed: none of these papers have those tags." };
+      const change: ProposedChange = {
+        id: randomUUID(),
+        kind: "untag_papers",
+        label: `Remove ${found.map((t) => `#${t.name}`).join(", ")} from ${plural(inside.length, "paper")}`,
+        paperIds: inside,
+        tags: found.map((t) => t.name),
+        status: "proposed",
+      };
+      return { change, message: `Proposed change: ${change.label}${unknownNote}.` };
+    }
+    case "rename_tag": {
+      const found = await tagByName(workspaceId, action.tag);
+      if (!found) return { message: `Not proposed: there is no tag #${action.tag.replace(/^#/, "")}.` };
+      const newName = action.name.replace(/^#/, "").trim();
+      const taken = await tagByName(workspaceId, newName);
+      if (taken && taken.id !== found.id) {
+        return {
+          message: `Not proposed: #${taken.name} already exists — untag_papers and tag_papers to combine them.`,
+        };
+      }
+      if (found.name === newName) return { message: `Not proposed: it is already called #${found.name}.` };
+      const change: ProposedChange = {
+        id: randomUUID(),
+        kind: "rename_tag",
+        label: `Rename tag #${found.name} to #${newName}`,
+        paperIds: [],
+        name: newName,
+        fromNames: [found.name],
+        status: "proposed",
+      };
+      return { change, message: `Proposed change: ${change.label}.` };
+    }
+    case "delete_tag": {
+      const found = await tagByName(workspaceId, action.tag);
+      if (!found) return { message: `Not proposed: there is no tag #${action.tag.replace(/^#/, "")}.` };
+      const count = (await tagPaperIds(found.id)).length;
+      const change: ProposedChange = {
+        id: randomUUID(),
+        kind: "delete_tag",
+        label: `Delete tag #${found.name}${count ? ` (removes it from ${plural(count, "paper")})` : ""}`,
+        paperIds: [],
+        name: found.name,
+        status: "proposed",
+      };
+      return { change, message: `Proposed change: ${change.label}.` };
+    }
+    case "edit_concept": {
+      const found = await conceptByName(workspaceId, action.concept);
+      if (!found) return { message: `Not proposed: there is no concept “${action.concept}”.` };
+      const change: ProposedChange = {
+        id: randomUUID(),
+        kind: "edit_concept",
+        label: `Update the description of your concept “${found.name}”`,
+        paperIds: [],
+        name: found.name,
+        description: action.description,
+        status: "proposed",
+      };
+      return { change, message: `Proposed change: ${change.label}.` };
+    }
+    case "delete_concept": {
+      const found = await conceptByName(workspaceId, action.concept);
+      if (!found) return { message: `Not proposed: there is no concept “${action.concept}”.` };
+      const count = (await conceptPaperIds(found.id)).length;
+      const change: ProposedChange = {
+        id: randomUUID(),
+        kind: "delete_concept",
+        label: `Delete your concept “${found.name}”${count ? ` (unlinks ${plural(count, "paper")})` : ""}`,
+        paperIds: [],
+        name: found.name,
+        status: "proposed",
+      };
+      return {
+        change,
+        message: `Proposed change: ${change.label}. Mentions of it in notes stop being links. To combine it with another concept, merge_concepts instead.`,
+      };
+    }
+    case "remove_from_library": {
+      const saved = await inLibrary(workspaceId, ids);
+      const inLib = ids.filter((id) => saved.has(id));
+      if (!inLib.length) return { message: "Not proposed: none of these papers are in the library." };
+      return merge("remove_from_library", "library", (paperIds) => ({
+        id: "",
+        kind: "remove_from_library",
+        label: `Remove ${plural(paperIds.length, "paper")} from your library (their notes, highlights and PDFs are kept)`,
+        paperIds,
+        name: "library",
+        status: "proposed",
+      }));
+    }
+    case "stop_following": {
+      const found = await savedSearchByQuery(workspaceId, action.query);
+      if (!found)
+        return {
+          message: `Not proposed: you are not following “${action.query}” (read_new_papers lists what you follow).`,
+        };
+      const change: ProposedChange = {
+        id: randomUUID(),
+        kind: "stop_following",
+        label: `Stop following “${found.query}” (New papers stops checking it)`,
+        paperIds: [],
+        name: found.query,
+        description: found.source,
+        status: "proposed",
+      };
+      return { change, message: `Proposed change: ${change.label}.` };
+    }
     case "add_highlight": {
       const source = sources.get(action.paper);
       if (!source || source.type !== "paper")
@@ -983,6 +1192,81 @@ async function applyOne(ctx: RequestContext, c: ProposedChange): Promise<Propose
       const saved = await createSavedSearch(ctx, { query: c.name ?? "", source: source ?? "general" });
       return { savedSearchId: saved.id, created: saved.created };
     }
+    case "edit_collection": {
+      const collection = await collectionByName(ws, c.fromNames?.[0] ?? "");
+      if (!collection) throw new AppError(404, "not_found", "That collection no longer exists.");
+      const newName = (c.name ?? "").trim();
+      await updateCollection(ws, collection.id, {
+        ...(newName && newName !== collection.name ? { name: newName } : {}),
+        ...(c.description !== undefined ? { description: c.description } : {}),
+      });
+      return {
+        collectionId: collection.id,
+        previousName: collection.name,
+        previousDescription: collection.description,
+      };
+    }
+    case "delete_collection": {
+      const collection = await collectionByName(ws, c.name ?? "");
+      if (!collection) throw new AppError(404, "not_found", "That collection no longer exists.");
+      const deleted = await snapshotCollection(collection.id);
+      await deleteCollection(ws, collection.id);
+      return { deleted };
+    }
+    case "untag_papers": {
+      const removed: [string, string][] = [];
+      for (const n of c.tags ?? []) {
+        const tag = await tagByName(ws, n);
+        if (!tag) continue;
+        const gone = await db
+          .delete(paperTags)
+          .where(and(eq(paperTags.tagId, tag.id), inArray(paperTags.paperId, c.paperIds)))
+          .returning({ paperId: paperTags.paperId });
+        removed.push(...gone.map((g): [string, string] => [g.paperId, tag.id]));
+      }
+      return { removedTagPairs: removed };
+    }
+    case "rename_tag": {
+      const tag = await tagByName(ws, c.fromNames?.[0] ?? "");
+      if (!tag) throw new AppError(404, "not_found", "That tag no longer exists.");
+      await updateTag(ws, tag.id, { name: (c.name ?? "").replace(/^#/, "").trim() });
+      return { tagId: tag.id, previousName: tag.name };
+    }
+    case "delete_tag": {
+      const tag = await tagByName(ws, c.name ?? "");
+      if (!tag) throw new AppError(404, "not_found", "That tag no longer exists.");
+      const deleted = await snapshotTag(tag.id);
+      await deleteTag(ws, tag.id);
+      return { deleted };
+    }
+    case "edit_concept": {
+      const concept = await conceptByName(ws, c.name ?? "");
+      if (!concept) throw new AppError(404, "not_found", "That concept no longer exists.");
+      const [row] = await db.select().from(concepts).where(eq(concepts.id, concept.id));
+      await updateConcept(ctx, concept.id, { description: c.description ?? "" });
+      return { conceptId: concept.id, previousDescription: row.description };
+    }
+    case "delete_concept": {
+      const concept = await conceptByName(ws, c.name ?? "");
+      if (!concept) throw new AppError(404, "not_found", "That concept no longer exists.");
+      const deleted = await snapshotConcept(concept.id);
+      await deleteConcept(ctx, concept.id);
+      return { deleted };
+    }
+    case "remove_from_library": {
+      const saved = await inLibrary(ws, c.paperIds);
+      const removed = c.paperIds.filter((id) => saved.has(id));
+      const deleted = await snapshotLibrary(ws, removed);
+      await removeFromLibrary(ws, removed);
+      return { deleted, removedPaperIds: removed };
+    }
+    case "stop_following": {
+      const search = await savedSearchByQuery(ws, c.name ?? "");
+      if (!search) throw new AppError(404, "not_found", "You no longer follow that search.");
+      const deleted = await snapshotSavedSearch(search.id);
+      await deleteSavedSearch(ws, search.id);
+      return { deleted };
+    }
     case "add_highlight": {
       if (!c.highlight) throw new AppError(400, "bad_request", "Nothing to highlight.");
       const h = await createHighlight(ws, ctx.userId, c.highlight.fileId, { kind: "highlight", ...c.highlight });
@@ -1269,6 +1553,37 @@ async function undoOne(ctx: RequestContext, c: ProposedChange) {
       if (r.conceptId && r.previousName !== undefined) {
         await updateConcept(ctx, r.conceptId, { name: r.previousName, aliases: r.previousAliases ?? [] });
       }
+      break;
+    case "edit_collection":
+      if (r.collectionId) {
+        await updateCollection(ws, r.collectionId, {
+          ...(r.previousName ? { name: r.previousName } : {}),
+          ...(r.previousDescription !== undefined ? { description: r.previousDescription } : {}),
+        });
+      }
+      break;
+    case "rename_tag":
+      if (r.tagId && r.previousName) await updateTag(ws, r.tagId, { name: r.previousName });
+      break;
+    case "edit_concept":
+      if (r.conceptId && r.previousDescription !== undefined) {
+        await updateConcept(ctx, r.conceptId, { description: r.previousDescription });
+      }
+      break;
+    case "untag_papers":
+      if (r.removedTagPairs?.length) {
+        await db
+          .insert(paperTags)
+          .values(r.removedTagPairs.map(([paperId, tagId]) => ({ paperId, tagId })))
+          .onConflictDoNothing();
+      }
+      break;
+    case "delete_collection":
+    case "delete_tag":
+    case "delete_concept":
+    case "remove_from_library":
+    case "stop_following":
+      await restoreSnapshot(r.deleted);
       break;
     case "edit_note":
     case "append_to_note": {

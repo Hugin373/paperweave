@@ -22,6 +22,8 @@ import {
   paperInfo,
   readConcept,
   readHighlights,
+  readNewPapers,
+  readReviews,
   readScreening,
   relatedInLibrary,
   SAVED_SORTS,
@@ -168,6 +170,8 @@ const readActionSchema = z.discriminatedUnion("tool", [
   }),
   z.object({ tool: z.literal("find_resources"), paper: key }),
   z.object({ tool: z.literal("read_screening"), title: z.string().trim().max(200).optional() }),
+  z.object({ tool: z.literal("read_new_papers"), search: z.string().trim().max(300).optional() }),
+  z.object({ tool: z.literal("read_reviews"), paper: key }),
   z.object({
     tool: z.literal("read_resource"),
     url: z.string().trim().url().max(500),
@@ -197,6 +201,9 @@ const readActionSchema = z.discriminatedUnion("tool", [
   }),
 ]);
 type ReadAction = z.infer<typeof readActionSchema>;
+
+/** Every reading tool the assistant has (with CHANGE_TOOLS: all its tools). */
+export const READ_TOOLS = new Set<string>(readActionSchema.options.map((o) => o.shape.tool.value));
 export type ResearchAction = ReadAction | ChangeAction;
 
 const actionSchema = z.union([readActionSchema, changeActionSchema]);
@@ -264,6 +271,10 @@ function actionId(a: ResearchAction) {
       return `resources:${a.paper.toUpperCase()}`;
     case "read_screening":
       return `screening:${norm(a.title ?? "")}`;
+    case "read_new_papers":
+      return `new-papers:${norm(a.search ?? "")}`;
+    case "read_reviews":
+      return `reviews:${a.paper.toUpperCase()}`;
     case "read_resource":
       return `resource:${a.url}:${a.path ?? ""}`;
     case "calculate":
@@ -355,6 +366,13 @@ function describeRead(a: ReadAction, sources: SourceRegistry): { kind: ResearchS
     }
     case "read_screening":
       return { kind: "workspace", label: a.title ? `Read your screening “${a.title}”` : "Looked at your screenings" };
+    case "read_new_papers":
+      return {
+        kind: "workspace",
+        label: a.search ? `Read the new papers for “${a.search}”` : "Looked at the topics you follow (New papers)",
+      };
+    case "read_reviews":
+      return { kind: "read", label: `Read the OpenReview reviews of ${title(a.paper)}` };
     case "find_resources":
       return { kind: "search", label: `Looked for the code, data and models of ${title(a.paper)}` };
     case "read_resource": {
@@ -463,6 +481,10 @@ export function toolFor(a: ReadAction, sources: SourceRegistry): ToolSpec {
         return findResources(ctx, a.paper);
       case "read_screening":
         return readScreening(ctx, a.title);
+      case "read_new_papers":
+        return readNewPapers(ctx, a.search);
+      case "read_reviews":
+        return readReviews(ctx, a.paper);
       case "read_resource":
         return readResource(ctx, { url: a.url, path: a.path });
       case "calculate":
@@ -518,6 +540,8 @@ Reading actions (refer to papers and notes only by the keys shown in <sources>, 
 - {"tool": "read_resource", "url": "https://github.com/owner/repo", "path": "configs/train.yaml"} — read a repository (overview, README, top-level files; one file with "path"), a Hugging Face model or dataset card, or a web page.
 - {"tool": "calculate", "expression": "7e9 * 2 / 1e9", "label": "fp16 weights in GB"} — exact arithmetic (+ - * / ^ %, parentheses, sqrt, log, ln, exp, min, max, round, ceil, floor; 4k/3M/2G/1T suffixes). Use it instead of doing sums in your head; state the inputs and where they come from.
 - {"tool": "read_screening", "title": "..."} — the user's screenings (systematic-review style): without a title, each with its progress; with one, its criteria and the included and "maybe" papers with reasons.
+- {"tool": "read_new_papers", "search": "<a followed query>"} — New papers: without "search", the topics the user follows with how many new papers each has; with one, its papers (new first, with keys and abstracts) so you can rank them against the library, save the good ones or stop following stale topics.
+- {"tool": "read_reviews", "paper": "P3"} — P3's OpenReview record: venue, accept/reject decision and the reviewers' ratings and summaries (reviews need an OpenReview account on the server; the decision does not).
 - {"tool": "list_workspace"} — the user's saved papers (with keys), collections, tags and concepts.
 - {"tool": "read_paper", "paper": "P3", "focus": "what to look for", "pages": "5-8"} — P3's full text where available (the user's PDF, its open-access PDF, or PubMed Central): the pages matching "focus", or the page range in "pages" (at most 8 pages; the paper's page count is reported). Both are optional.
 - {"tool": "list_concepts"} — the user's existing concepts and how many papers each links.
@@ -550,6 +574,16 @@ Change actions — these are only proposed: the user reviews and applies them (u
 - {"tool": "start_screening", "title": "...", "criteria": "Include: …\nExclude: …", "collection": "<collection name>", "papers": ["P1", ...], "use_full_text": false} — screen many papers (a collection and/or keys, up to 500) against inclusion / exclusion criteria in the background; each gets include / exclude / maybe with a reason the user can override.
 - {"tool": "save_search", "query": "...", "source": "general|biomedical|openreview|arxiv"} — follow a topic: the search runs daily and new papers appear under New papers ("arxiv": the newest preprints). For "tell me when new papers on X appear".
 - {"tool": "add_highlight", "paper": "P3", "text": "<exact words from the paper>", "page": 5, "comment": "...", "color": "yellow|green|blue|pink|purple"} — highlight a passage in the paper's PDF (it must have one here). Quote the text exactly as written (from read_paper or find_passages); "page", "comment" and "color" are optional.
+- {"tool": "edit_collection", "collection": "<name>", "name": "<new name>", "description": "..."} — rename a collection and/or change its description (each optional).
+- {"tool": "untag_papers", "tags": ["..."], "papers": [...]} — remove tags from papers.
+- {"tool": "rename_tag", "tag": "<name>", "name": "<new name>"}
+- {"tool": "edit_concept", "concept": "<name>", "description": "<one sentence>"} — rewrite a concept's description (rename_concept renames it).
+Deleting — only when the user asked to delete or remove something; never as a side effect of organizing (these are never applied automatically, and all can be undone):
+- {"tool": "delete_collection", "collection": "<name>"} — deletes the collection; its papers stay in the library.
+- {"tool": "delete_tag", "tag": "<name>"} — deletes the tag and removes it from every paper.
+- {"tool": "delete_concept", "concept": "<name>"} — deletes the concept and its links. For duplicates, merge_concepts instead.
+- {"tool": "remove_from_library", "papers": [...]} — takes papers out of the library (and its collections and tags); their notes, highlights and PDFs are kept.
+- {"tool": "stop_following", "query": "<a followed query>"} — stop a New papers search (read_new_papers lists them).
 
 Playbooks — when a request matches one, open it first (in the same round as your first reading actions) and follow it with judgment; for anything else, decide the steps yourself:
 ${playbookIndex()}
@@ -559,8 +593,15 @@ Guidelines:
 - To act on papers the user names or describes, first find them (search_library${mode === "chat" ? "" : " or search_papers"}) so they have keys.
 - Check what exists (list_workspace, list_concepts) before creating collections, tags or concepts, so existing ones are reused.
 - When the question concerns papers listed in <scope>, start with those. When <reader> is present, the user is reading that paper right now.
+- ${CANNOT_DO}
 - Never invent keys. Do not repeat actions listed under <done_actions>. Finish as soon as you have what you need.`;
 }
+
+/**
+ * What the assistant cannot do, and where the user does it instead: it says so rather than improvising or
+ * proposing something close but different.
+ */
+const CANNOT_DO = `You cannot (say so plainly and tell the user where to do it, rather than doing something close but different): delete notes or highlights (a note's menu → Delete; click a highlight in the reader), upload a PDF file (the paper's page → Upload PDF), import BibTeX or a list of DOIs (Settings → Import), export (Settings → Export), share anything (the Share button on a collection, note or concept), change AI or account settings (Settings), edit a paper's title, authors or other metadata (scholarly data is read-only; "Refresh" on the paper's page fetches it again), or mark New papers as seen or check a followed search right away (the New papers page).`;
 
 const WRITER_SYSTEM = `# Paperweave assistant writer
 You write the reply of an AI assistant inside a scientific knowledge workspace, based on the conversation and the findings provided.
@@ -570,6 +611,7 @@ Rules:
 - Distinguish what papers state from your own synthesis, and the user's own notes from the literature.
 - If <changes> lists workspace changes, tell the user briefly what you propose (they review and apply them in the card below your reply) or, if they were applied, what was done — and mention any that failed. Do not claim changes that are not listed, and do not recommend further collections, concepts or tags that are not listed: the card is where proposals live.
 - If the findings are thin, say so plainly and suggest what to do next.
+- If the user asked for something the assistant cannot do, say so and where in the app to do it. ${CANNOT_DO}
 - Write well-structured Markdown, as long as the request needs and no longer. Do not include a reference list at the end (Paperweave shows the sources).`;
 
 const DEEP_FORMAT = `Write a research report:

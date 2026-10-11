@@ -1,11 +1,12 @@
 "use client";
 
 import { useQueries } from "@tanstack/react-query";
-import { CheckCircle2, CircleSlash, Loader2, MessagesSquare, Trash2, TriangleAlert } from "lucide-react";
+import { CheckCircle2, CircleHelp, CircleSlash, Loader2, MessagesSquare, Trash2, TriangleAlert } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
 import { AiNotConfigured } from "@/components/ai/ai";
+import { CapabilitiesList } from "./capabilities";
 import { Skeleton } from "@/components/ui/spinner";
 import { ErrorState } from "@/components/ui/states";
 import { api, errorMessage } from "@/lib/api";
@@ -150,6 +151,27 @@ export function ResearchHome({
             </button>
           ))}
         </div>
+      )}
+
+      {aiEnabled && (
+        <details className="group mt-6 rounded-xl border border-border bg-surface">
+          <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-[13.5px] font-medium select-none">
+            <CircleHelp className="size-4 text-ai" aria-hidden />
+            What can the Assistant do?
+            <span className="ml-auto text-[12px] font-normal text-subtle group-open:hidden">Show</span>
+            <span className="ml-auto hidden text-[12px] font-normal text-subtle group-open:inline">Hide</span>
+          </summary>
+          <div className="border-t border-border px-4 py-4">
+            <CapabilitiesList
+              onPick={(text, mode) => {
+                setPrefill(text);
+                setPrefillMode(mode);
+                setComposerKey((k) => k + 1);
+                window.scrollTo({ top: 0, behavior: "smooth" });
+              }}
+            />
+          </div>
+        </details>
       )}
 
       <section className="mt-10" aria-labelledby="recent-research">

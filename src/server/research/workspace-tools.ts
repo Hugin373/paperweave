@@ -495,3 +495,64 @@ export async function readScreening(ctx: ToolContext, title?: string): Promise<T
     count: d.total,
   };
 }
+
+/**
+ * What the user follows under New papers, or one followed search's papers (new ones first, with keys so they
+ * can be saved or compared with the library). Reading does not mark anything as seen.
+ */
+export async function readNewPapers(ctx: ToolContext, query?: string): Promise<ToolResult> {
+  const { listSavedSearches, savedSearchResultsOf } = await import("@/server/alerts/service");
+  const all = await listSavedSearches(ctx.workspaceId);
+  const where = (s: (typeof all)[number]) =>
+    ({ general: "all fields", biomedical: "biomedical", openreview: "OpenReview", arxiv: "arXiv preprints" })[s.source];
+  const line = (s: (typeof all)[number]) =>
+    `“${s.query}” (${where(s)}) — ${s.newCount} new of ${s.total}${s.lastRunAt ? `, checked ${s.lastRunAt.slice(0, 10)}` : ", not checked yet"}${s.lastError ? ` — last check failed: ${clean(s.lastError, 120)}` : ""}`;
+  if (!query?.trim()) {
+    return {
+      report: all.length
+        ? `The user follows (New papers):\n${all.map((s) => `- ${line(s)}`).join("\n")}\nRead one with "search": "<its query>".`
+        : "The user follows no searches yet (save_search starts one).",
+      count: all.length,
+    };
+  }
+  const wanted = query.trim().toLowerCase();
+  const found =
+    all.find((s) => s.query.toLowerCase() === wanted) ?? all.find((s) => s.query.toLowerCase().includes(wanted));
+  if (!found) {
+    throw new ToolInputError(
+      `The user does not follow “${query}”.${all.length ? ` Followed: ${all.map((s) => `“${s.query}”`).join(", ")}.` : ""}`,
+    );
+  }
+  const { papers } = await savedSearchResultsOf(ctx.workspaceId, found.id);
+  const shown = [...papers.filter((p) => p.isNew), ...papers.filter((p) => !p.isNew)].slice(0, 40);
+  const lines = shown.map((p) => {
+    const s = ctx.sources.addPaper(p);
+    const abstract = clean(p.abstract, 300);
+    return `- ${s.key}${p.isNew ? " [new]" : ""}: ${p.title} (${p.year ?? "n.d."}${p.venue ? `, ${p.venue}` : ""}) · found ${p.foundAt.slice(0, 10)}${p.library ? ` · in the library (${p.library.status})` : ""}${abstract ? `\n  Abstract: ${abstract}` : ""}`;
+  });
+  return {
+    report: `New papers for ${line(found)}${papers.length > shown.length ? ` (showing ${shown.length}, new first)` : ""}:\n${lines.join("\n") || "(nothing found yet)"}`,
+    count: papers.length,
+  };
+}
+
+/** A paper's OpenReview record: venue, decision and reviews (reviews need an OpenReview account on the server). */
+export async function readReviews(ctx: ToolContext, key: string): Promise<ToolResult> {
+  const { openReviewForPaper } = await import("@/server/papers/openreview");
+  const paper = paperSource(ctx, key);
+  const info = await openReviewForPaper(ctx.workspaceId, paper.id);
+  if (!info)
+    return { report: `${paper.title} has no OpenReview record (it was not submitted to an OpenReview venue).` };
+  const reviews = info.reviews.map(
+    (r, i) =>
+      `- Review ${i + 1}: rating ${r.rating ?? "?"}, confidence ${r.confidence ?? "?"}${r.summary ? `\n  ${clean(r.summary, 1200)}` : ""}`,
+  );
+  return {
+    report: `OpenReview for ${paper.title}: ${info.venue ?? "venue unknown"}${info.decision ? `; decision: ${info.decision}` : ""} (${info.url})\n${
+      info.reviewsLoaded
+        ? reviews.join("\n") || "No reviews are public."
+        : "Reviews are not available: they need an OpenReview account set on the server (OPENREVIEW_USERNAME / OPENREVIEW_PASSWORD)."
+    }`,
+    count: info.reviews.length,
+  };
+}

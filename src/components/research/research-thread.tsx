@@ -34,6 +34,7 @@ import { useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { AiLabel } from "@/components/ai/ai";
 import { ModelPicker } from "@/components/ai/model-picker";
+import { CapabilitiesButton } from "./capabilities";
 import { PROVIDER_SHORT } from "@/lib/ai-models";
 import { SaveControl } from "@/components/papers/save-control";
 import { useBulk } from "@/lib/mutations";
@@ -849,7 +850,12 @@ export function ResearchThread({ id }: { id: string }) {
           disabled={!aiEnabled}
           onStop={() => stop.mutate()}
           onSubmit={(question, mode, auto) => ask.mutateAsync({ question, mode, autoApply: auto })}
-          footer={<ModelPicker />}
+          footer={
+            <>
+              <ModelPicker />
+              <CapabilitiesButton />
+            </>
+          }
         />
       </div>
     </div>

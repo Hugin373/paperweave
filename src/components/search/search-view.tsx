@@ -79,12 +79,64 @@ function filtersFromParams(p: URLSearchParams): SearchFilterValues {
   };
 }
 
+/** Papers marked "Reading", most recently touched first: where to pick up. */
+function ReadingPapers() {
+  const { data } = useQuery({
+    queryKey: ["library", "reading"],
+    queryFn: () => api<LibraryResponse>(`/api/library${qs({ status: "reading", sort: "updated_desc", limit: 6 })}`),
+  });
+  if (!data || !data.counts.all) return null;
+  return (
+    <section aria-labelledby="reading-title">
+      <div className="mb-3 flex items-center justify-between">
+        <h2 id="reading-title" className="text-sm font-semibold text-muted">
+          Continue reading
+        </h2>
+        {data.counts.reading > data.items.length && (
+          <Link href="/library?status=reading" className="text-sm text-accent-text hover:underline">
+            All {data.counts.reading}
+          </Link>
+        )}
+      </div>
+      {data.items.length ? (
+        <div className="space-y-2">
+          {data.items.map((p) => (
+            <PaperCard
+              key={p.id}
+              paper={p}
+              dense
+              actions={
+                <>
+                  <SaveControl paperId={p.id} library={p.library} />
+                  <ReadAction
+                    paperId={p.id}
+                    hasFile={p.hasPdf}
+                    pdfAvailable={p.pdfAvailable}
+                    freeReadUrl={p.freeReadUrl}
+                    pdfUrl={p.openAccessPdfUrl}
+                  />
+                </>
+              }
+            />
+          ))}
+        </div>
+      ) : (
+        <p className="rounded-lg border border-dashed border-border px-4 py-3 text-sm text-muted">
+          Nothing in progress. Mark a paper as <span className="font-medium text-text">Reading</span> to keep it here.
+        </p>
+      )}
+    </section>
+  );
+}
+
 function RecentPapers() {
   const { data } = useQuery({
     queryKey: ["library", "recent"],
-    queryFn: () => api<LibraryResponse>(`/api/library${qs({ sort: "updated_desc", limit: 5 })}`),
+    queryFn: () => api<LibraryResponse>(`/api/library${qs({ sort: "updated_desc", limit: 10 })}`),
   });
-  if (!data?.items.length) return null;
+  // Papers in progress are listed under "Continue reading" already.
+  const items = (data?.items ?? []).filter((p) => p.library.status !== "reading").slice(0, 5);
+  if (!items.length) return null;
   return (
     <section aria-labelledby="recent-title">
       <div className="mb-3 flex items-center justify-between">
@@ -96,7 +148,7 @@ function RecentPapers() {
         </Link>
       </div>
       <div className="space-y-2">
-        {data.items.map((p) => (
+        {items.map((p) => (
           <PaperCard key={p.id} paper={p} dense actions={<SaveControl paperId={p.id} library={p.library} />} />
         ))}
       </div>
@@ -443,6 +495,7 @@ export function SearchView() {
               ))}
             </div>
           </section>
+          <ReadingPapers />
           <RecentPapers />
         </>
       )}

@@ -505,8 +505,26 @@ export const CHANGE_KINDS = [
   "add_highlight",
   "save_search",
   "start_screening",
+  "edit_collection",
+  "delete_collection",
+  "untag_papers",
+  "rename_tag",
+  "delete_tag",
+  "edit_concept",
+  "delete_concept",
+  "remove_from_library",
+  "stop_following",
 ] as const;
 export type ChangeKind = (typeof CHANGE_KINDS)[number];
+
+/** Changes that delete something: never applied automatically (Auto-apply leaves their set for approval). */
+export const DESTRUCTIVE_CHANGE_KINDS: readonly ChangeKind[] = [
+  "delete_collection",
+  "delete_tag",
+  "delete_concept",
+  "remove_from_library",
+  "stop_following",
+];
 
 /** A change to the user's workspace proposed by the assistant (applied only on approval or auto-apply). */
 export interface ProposedChange {
@@ -584,6 +602,13 @@ export interface ProposedChange {
     /** save_search: the saved search, and whether this change created it (undo deletes only then). */
     savedSearchId?: string;
     screeningId?: string;
+    /** edit_collection / rename_tag / edit_concept: the name and description before (restored on undo). */
+    previousDescription?: string;
+    tagId?: string;
+    /** untag_papers: the [paper, tag] pairs removed (restored on undo). */
+    removedTagPairs?: [string, string][];
+    /** delete_* / remove_from_library / stop_following: the deleted rows, put back with their ids on undo. */
+    deleted?: unknown;
   };
 }
 

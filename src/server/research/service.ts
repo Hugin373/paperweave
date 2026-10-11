@@ -23,6 +23,7 @@ import type {
   ResearchOrigin,
   SourceRanking,
 } from "@/lib/types";
+import { DESTRUCTIVE_CHANGE_KINDS } from "@/lib/types";
 import { providerForWorkspace } from "@/server/ai/config";
 import { loadPaperText } from "@/server/ai/paper-text";
 import { AIError, type AIProvider } from "@/server/ai/types";
@@ -205,6 +206,44 @@ function titleFrom(question: string) {
   return t.length > 90 ? `${t.slice(0, 87).trimEnd()}…` : t;
 }
 
+/** A paper's name for a title: the part before a colon ("VIGIL: Tackling…" → "VIGIL"), or its start. */
+export function shortPaperTitle(title: string) {
+  const t = title.replace(/\s+/g, " ").trim();
+  const head = t.split(/:\s/)[0];
+  const name = head.length >= 3 && head.length < t.length ? head : t;
+  return name.length > 50 ? `${name.slice(0, 47).replace(/\s+\S*$/, "")}…` : name;
+}
+
+/**
+ * A conversation's title: the question, led by what it is about when it is about specific papers or a
+ * collection ("VIGIL — Walk me through the paper section by section"), so conversations asking the same
+ * thing about different papers can be told apart. Left as is when the question already names it.
+ */
+export function threadTitle(question: string, about: { papers: string[]; collection: string | null }) {
+  const asked = titleFrom(question);
+  const subject = about.papers.length
+    ? `${shortPaperTitle(about.papers[0])}${about.papers.length > 1 ? ` +${about.papers.length - 1} more` : ""}`
+    : about.collection
+      ? `Collection: ${about.collection}`
+      : null;
+  if (!subject) return asked;
+  const named = about.papers.length ? shortPaperTitle(about.papers[0]) : (about.collection ?? "");
+  if (named && question.toLowerCase().includes(named.replace(/…$/, "").toLowerCase())) return asked;
+  return titleFrom(`${subject} — ${asked}`);
+}
+
+async function titleFor(ctx: RequestContext, question: string, scope: ResearchScope) {
+  const [papers, collection] = await Promise.all([
+    scope.paperIds.length ? getPaperSummaries(ctx.workspaceId, scope.paperIds) : [],
+    scope.collectionId ? getOwnedCollection(ctx.workspaceId, scope.collectionId) : null,
+  ]);
+  const byId = new Map(papers.map((p) => [p.id, p.title]));
+  return threadTitle(question, {
+    papers: scope.paperIds.map((id) => byId.get(id)).filter((t): t is string => !!t),
+    collection: collection?.name ?? null,
+  });
+}
+
 export async function createThread(
   ctx: RequestContext,
   input: {
@@ -228,7 +267,13 @@ export async function createThread(
   });
   const [thread] = await db
     .insert(researchThreads)
-    .values({ workspaceId: ctx.workspaceId, createdBy: ctx.userId, title: titleFrom(input.question), scope, origin })
+    .values({
+      workspaceId: ctx.workspaceId,
+      createdBy: ctx.userId,
+      title: await titleFor(ctx, input.question, scope),
+      scope,
+      origin,
+    })
     .returning();
   const messageId = await startRun(ctx, thread, provider, {
     question: input.question,
@@ -515,12 +560,15 @@ async function execute(
       signal,
       // With auto-apply, changes are made before the reply is written, so it can report what happened.
       // Concepts the AI ranked low are optional: auto-apply skips them, as the card leaves them unticked.
+      // A set that deletes anything is never applied automatically: it waits for the user's approval.
       beforeWrite: autoApply
-        ? (items) =>
-            applyChanges(
-              ctx,
-              items.map((c) => (c.priority === "low" ? { ...c, status: "skipped" as const } : c)),
-            )
+        ? async (items) =>
+            items.some((c) => DESTRUCTIVE_CHANGE_KINDS.includes(c.kind))
+              ? items
+              : applyChanges(
+                  ctx,
+                  items.map((c) => (c.priority === "low" ? { ...c, status: "skipped" as const } : c)),
+                )
         : undefined,
     });
     sink.content = answer;
