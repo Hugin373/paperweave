@@ -39,6 +39,17 @@ function paperLine(s: ResearchSource) {
   return `${s.key}: ${s.title}${meta ? ` (${meta})` : ""}`;
 }
 
+/** The ranking in a line, for the planner's view of earlier replies ("read first: P3, P7; high: P5; …"). */
+export function rankingLine(r: SourceRanking) {
+  const keys = (level: string) => r.priority.filter((p) => p.level === level).map((p) => p.key);
+  return [
+    r.start.length ? `read first: ${r.start.map((s) => s.key).join(", ")}` : "",
+    ...SOURCE_PRIORITIES.map((level) => (keys(level).length ? `${level}: ${keys(level).join(", ")}` : "")),
+  ]
+    .filter(Boolean)
+    .join("; ");
+}
+
 /** The cited papers of a reply (notes are the user's own and are not ranked). */
 export function citedPapers(content: string, sources: ResearchSource[]) {
   const byKey = new Map(sources.map((s) => [s.key, s]));

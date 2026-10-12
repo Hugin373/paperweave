@@ -35,7 +35,7 @@ import { collectionPaperIds, getOwnedCollection } from "@/server/library/organiz
 import { getPaperSummaries, getVisiblePaper } from "@/server/papers/service";
 import { citedKeys, runResearchLoop, type ResearchSink, type Turn } from "./agent";
 import { applyChanges, undoChanges } from "./changes";
-import { citedPapers, LITERATURE_STEP_KINDS, MIN_RANKED_PAPERS, rankCitedSources } from "./ranking";
+import { citedPapers, LITERATURE_STEP_KINDS, MIN_RANKED_PAPERS, rankCitedSources, rankingLine } from "./ranking";
 import { SourceRegistry } from "./tools";
 
 type ThreadRow = typeof researchThreads.$inferSelect;
@@ -538,7 +538,9 @@ async function execute(
     if (m.role === "assistant") {
       if (m.sources.length >= priorSources.length) priorSources = m.sources;
       const q = previous[i - 1]?.role === "user" ? previous[i - 1].content : "";
-      if (m.status === "done" && m.content) history.push({ question: q, answer: m.content });
+      if (m.status === "done" && m.content) {
+        history.push({ question: q, answer: m.content, ...(m.ranking ? { ranking: rankingLine(m.ranking) } : {}) });
+      }
     }
   }
   const sources = new SourceRegistry(priorSources);

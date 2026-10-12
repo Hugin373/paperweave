@@ -74,7 +74,10 @@ export const ASSISTANT_CAPABILITIES: AssistantCapability[] = [
   {
     title: "Organize",
     items: [
-      { text: "Save papers and set reading statuses", tools: ["save_papers", "set_reading_status"] },
+      {
+        text: "Save papers, then (if you want) put them in the collections and concepts they fit; set reading statuses",
+        tools: ["save_papers", "suggest_placement", "set_reading_status"],
+      },
       {
         text: "Create, rename and describe collections; add papers or take them out",
         tools: ["create_collection", "add_to_collection", "remove_from_collection", "edit_collection"],

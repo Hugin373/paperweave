@@ -71,6 +71,7 @@ import {
 } from "./removal";
 import { applyBlockEdits, planBlockEdits, type PlannedEdit } from "./note-blocks";
 import type { SourceRegistry } from "./tools";
+import { placementLines } from "./workspace-tools";
 
 // ---------------------------------------------------------------------------
 // Protocol (what the model may propose)
@@ -209,6 +210,18 @@ export const CHANGE_TOOLS = new Set<string>(changeActionSchema.options.map((o) =
 // ---------------------------------------------------------------------------
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+/**
+ * Where papers being saved may belong (existing collections and concepts, found without AI). Placing them is
+ * the next step: the reply offers it, and the planner does it once the user agrees.
+ */
+async function placementNote(workspaceId: string, paperIds: string[], sources: SourceRegistry) {
+  const keyOf = new Map(sources.all().map((s) => [s.id, s.key]));
+  const items = paperIds.flatMap((id) => (keyOf.has(id) ? [{ key: keyOf.get(id)!, id }] : []));
+  const lines = await placementLines(workspaceId, items);
+  if (!lines.length) return "";
+  return `\nPlacement not proposed yet. Where they may belong — hints from concept names and citations:\n${lines.join("\n")}\nUnless the user already asked for collections or concepts, do not propose them now: the reply asks whether to add the papers to collections and concepts.`;
+}
 
 async function inLibrary(workspaceId: string, paperIds: string[]): Promise<Set<string>> {
   if (!paperIds.length) return new Set();
@@ -379,7 +392,11 @@ export async function proposeChange(
     case "save_papers": {
       const saved = await inLibrary(workspaceId, ids);
       const fresh = ids.filter((id) => !saved.has(id));
-      if (!fresh.length) return { message: "Not proposed: those papers are already in the library." };
+      if (!fresh.length) {
+        return {
+          message: `Not proposed: those papers are already in the library.${await placementNote(workspaceId, ids, sources)}`,
+        };
+      }
       const status = action.status ?? "saved";
       const same = existing.find((c) => c.kind === "save_papers" && c.status === "proposed");
       const paperIds = [...new Set([...(same?.paperIds ?? []), ...fresh])];
@@ -391,7 +408,10 @@ export async function proposeChange(
         name: status,
         status: "proposed",
       };
-      return { change, message: `Proposed change: ${change.label}${unknownNote}.` };
+      return {
+        change,
+        message: `Proposed change: ${change.label}${unknownNote}.${await placementNote(workspaceId, fresh, sources)}`,
+      };
     }
     case "create_collection":
     case "add_to_collection": {

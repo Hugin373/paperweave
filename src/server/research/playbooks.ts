@@ -45,7 +45,8 @@ C. Cleaning up — each is a different action; propose only what the user asked 
 2. list_workspace to see existing collections and tags; add to an existing collection when one fits instead of creating a near-duplicate.
 3. Collections are for a project, question or reading list (a few to a few dozen papers); tags are short labels that cut across collections (e.g. "to-replicate", "survey", "dataset").
 4. Name collections by their purpose ("Thesis ch. 2 — cardiac MRI segmentation"), with a one-line description.
-5. Propose only what the user asked for; mention further ideas in the reply as suggestions they can ask for.`,
+5. Adding papers to the library goes in steps (see Guidelines): find and save first, then ask whether to add them to collections and concepts; once the user agrees, suggest_placement and propose add_to_collection / link_concept where each paper fits.
+6. Propose only what the user asked for; mention further ideas in the reply as suggestions they can ask for.`,
   },
   {
     name: "paper-reading",
@@ -150,7 +151,7 @@ C. Cleaning up — each is a different action; propose only what the user asked 
     steps: `1. read_new_papers to see what the user follows and how many new papers each topic has; then read_new_papers with "search" for the topics in question (new papers come first, with abstracts).
 2. Judge each new paper against the user's work, not in general: search_library / related_in_library / find_saved_papers (with "abstracts": true) show what they already have and care about. A new paper matters when it extends, challenges or directly competes with papers they saved, or fills a gap in a collection.
 3. Answer with a short ranked list: what is worth reading now (and why, citing the related saved papers), what is merely related, and what can be skipped. Be honest when nothing stands out.
-4. Propose only what the user asked for: save_papers (status "saved" or "reading") for the papers they want, add_to_collection where they fit.
+4. Propose only what the user asked for: save_papers (status "saved" or "reading") for the papers they want; offer to place them in collections and concepts, and do so (suggest_placement, add_to_collection, link_concept) when they agree.
 5. Following topics: for "keep me up to date on X" propose save_search (source "arxiv" for the latest preprints, "biomedical" or "openreview" when the field calls for it; one focused query per topic, as a researcher would search). For setting up several from the library, derive one query per main collection or concept. Suggest stop_following for topics that keep bringing irrelevant papers — only propose it when the user agrees.`,
   },
   {

@@ -26,6 +26,7 @@ import {
   readReviews,
   readScreening,
   relatedInLibrary,
+  suggestPlacement,
   SAVED_SORTS,
 } from "./workspace-tools";
 import {
@@ -161,6 +162,7 @@ const readActionSchema = z.discriminatedUnion("tool", [
   }),
   z.object({ tool: z.literal("read_highlights"), paper: key, offset }),
   z.object({ tool: z.literal("related_in_library"), paper: key }),
+  z.object({ tool: z.literal("suggest_placement"), papers: z.array(key).min(1).max(20) }),
   z.object({ tool: z.literal("open_playbook"), name: z.string().trim().min(1).max(60) }),
   z.object({
     tool: z.literal("find_passages"),
@@ -261,6 +263,8 @@ function actionId(a: ResearchAction) {
       return `${a.tool}:${a.paper.toUpperCase()}`;
     case "read_highlights":
       return `${a.tool}:${a.paper.toUpperCase()}:${a.offset ?? 0}`;
+    case "suggest_placement":
+      return `placement:${a.papers.map((k) => k.toUpperCase()).join(",")}`;
     case "find_saved_papers":
       return `find:${JSON.stringify(a)}`;
     case "open_playbook":
@@ -358,6 +362,8 @@ function describeRead(a: ReadAction, sources: SourceRegistry): { kind: ResearchS
       return { kind: "read", label: `Read your highlights in ${title(a.paper)}` };
     case "related_in_library":
       return { kind: "library", label: `Found papers in your library connected to ${title(a.paper)}` };
+    case "suggest_placement":
+      return { kind: "library", label: `Looked for where ${a.papers.map(title).join(", ")} could go` };
     case "open_playbook":
       return { kind: "playbook", label: `Opened the “${findPlaybook(a.name)?.title ?? a.name}” playbook` };
     case "find_passages": {
@@ -473,6 +479,8 @@ export function toolFor(a: ReadAction, sources: SourceRegistry): ToolSpec {
         return readHighlights(ctx, a.paper, a.offset);
       case "related_in_library":
         return relatedInLibrary(ctx, a.paper);
+      case "suggest_placement":
+        return suggestPlacement(ctx, a.papers);
       case "find_passages":
         return findPassages(ctx, { queries: a.queries, papers: a.papers, limit: a.limit });
       case "extract_fields":
@@ -550,11 +558,12 @@ Reading actions (refer to papers and notes only by the keys shown in <sources>, 
 - {"tool": "find_saved_papers", "collection": "A" or ["A", "B"], "tag": ..., "concept": ..., "not_collection": ..., "not_tag": ..., "not_concept": ..., "status": "saved" or ["saved", "reading"], "query": "...", "year_from": 2020, "year_to": 2025, "has_pdf": true, "has_notes": false, "has_highlights": false, "has_concepts": false, "in_collection": false, "types": ["review"], "not_types": ["review"], "sort": "updated|added|newest|oldest|citations|title", "abstracts": true, "offset": 0, "limit": 60} — the user's saved papers matching ALL given filters (each optional; a list means any of them; has_…/in_collection false finds what is missing, e.g. unread papers without notes). Reports the total; page with "offset" (up to 100 per call). With "abstracts": true each paper also shows the start of its abstract — use it whenever you judge what papers are about (organizing, grouping, linking concepts) rather than guessing from titles. Types: journal_article, conference, preprint, review (surveys), book, dataset, dissertation, other.
 - {"tool": "read_highlights", "paper": "P3"} — the user's highlights and comments on P3, by page ("offset" pages past 120).
 - {"tool": "related_in_library", "paper": "P3"} — saved papers connected to P3 through concepts, collections, citations or notes, strongest first.
+- {"tool": "suggest_placement", "papers": ["P3"]} — where papers could go: existing collections and concepts hinted by concept names and citations, each paper's abstract, and where it already is.
 - {"tool": "open_playbook", "name": "..."} — a step-by-step guide for a kind of task (see Playbooks).
 - {"tool": "read_note", "note": "N2"} — one of the user's notes, as numbered blocks [B1], [B2], … (needed before edit_note).${literature}
 
 Change actions — these are only proposed: the user reviews and applies them (unless they enabled auto-apply). Propose changes only when the user asks for them (saving, organizing, tagging, linking concepts, writing a note), never merely to answer a question:
-- {"tool": "save_papers", "papers": ["P1", "P2"], "status": "reading"} — status is optional: saved, reading, read or archived.
+- {"tool": "save_papers", "papers": ["P1", "P2"], "status": "reading"} — status is optional: saved, reading, read or archived. Its result lists hints for where each paper may belong.
 - {"tool": "create_collection", "name": "...", "description": "...", "papers": ["P1", ...]}
 - {"tool": "add_to_collection", "collection": "<existing collection name>", "papers": [...]}
 - {"tool": "tag_papers", "tags": ["..."], "papers": [...]}
@@ -592,6 +601,11 @@ Guidelines:
 - ${modeGuide}
 - To act on papers the user names or describes, first find them (search_library${mode === "chat" ? "" : " or search_papers"}) so they have keys.
 - Check what exists (list_workspace, list_concepts) before creating collections, tags or concepts, so existing ones are reused.
+- Adding papers to the library goes in steps, so the user can check each one:
+  1. Know which papers. One paper the user names or describes: find it (search_library${mode === "chat" ? "" : ", then search_papers"}); if nothing matches, or several papers could be the one, propose nothing: the reply says what was found and asks which. Several papers the user names (titles, DOIs or arXiv ids; a DOI or id as the query finds that exact paper): find each the same way, in parallel; save the ones clearly found and leave out the rest — the reply goes through them one by one. Papers described only by topic ("add some papers on X"): search, but unless the user said which or how many ("the 5 most cited since 2022"), propose nothing — the reply lists the best candidates and asks which to add. Papers from an earlier reply ("the high-priority ones", "P3 and P5", "the first three"): take them from <conversation_so_far> and its <ranking> ("high priority" means the papers to read first and those ranked high). Papers the user says they just saved: find_saved_papers with "sort": "added" (it shows when each was added) — the group added most recently, preferring papers listed in <sources>; ask if it is unclear.
+  2. Propose save_papers for those not saved yet.
+  3. If the request also asks for collections or concepts, place the papers now (step 4). Otherwise do not: the reply asks whether to add them to collections and concepts, and you place them once the user agrees ("yes", "do it").
+  4. Placing: suggest_placement for the papers (up to 20 per call) and list_workspace, then propose add_to_collection for each existing collection a paper fits and link_concept for each existing concept it fits, judged by its abstract. Propose create_concept only for a clear research topic papers share (link every saved paper it fits), and create_collection only when the user asks or several papers form a new group. Say which papers fit nowhere.
 - When the question concerns papers listed in <scope>, start with those. When <reader> is present, the user is reading that paper right now.
 - ${CANNOT_DO}
 - Never invent keys. Do not repeat actions listed under <done_actions>. Finish as soon as you have what you need.`;
@@ -609,6 +623,9 @@ You write the reply of an AI assistant inside a scientific knowledge workspace, 
 Rules:
 - Ground factual claims about papers in the findings, citing sources inline by their keys in square brackets, e.g. [P3] or [P3, P7]; notes as [N1]. When the findings give the page, add it right after the key: [P3] (p. 5) — it becomes a link to that page. Only cite keys listed in <sources>. Never invent papers, numbers, pages or results.
 - Distinguish what papers state from your own synthesis, and the user's own notes from the literature.
+- When the user asked to add specific papers to the library, say which paper was found for each (title, first author, year, venue) so they can confirm it is the right one — or, if none or several matched, what was found and what to try or which they mean. For several papers, go through them as a short list: found, not found, or which one they mean.
+- When the reply recommends papers found by searching the literature and <changes> is empty, end with one short line offering to add the ones the user picks (e.g. "the high-priority ones" from the ranking shown with the reply), and then to put them in collections and concepts.
+- When the findings say "Placement not proposed yet", end the reply by asking whether to add the papers to collections and concepts, naming the likely ones from the hints in a few words (e.g. "It looks like it fits “Heart imaging” and the concept “MRI” — shall I add it?"). This question is the one exception to the rule below about not recommending collections or concepts.
 - If <changes> lists workspace changes, tell the user briefly what you propose (they review and apply them in the card below your reply) or, if they were applied, what was done — and mention any that failed. Do not claim changes that are not listed, and do not recommend further collections, concepts or tags that are not listed: the card is where proposals live.
 - If the findings are thin, say so plainly and suggest what to do next.
 - If the user asked for something the assistant cannot do, say so and where in the app to do it. ${CANNOT_DO}
@@ -627,6 +644,8 @@ const NO_SEARCH_HINT = `Literature search is off for this message. If answering 
 export interface Turn {
   question: string;
   answer: string;
+  /** How the reply's papers were ranked for the user (shown with it): read first, high, medium, low. */
+  ranking?: string;
 }
 
 export interface ResearchState {
@@ -683,7 +702,9 @@ function contextBlocks(state: ResearchState, sources: SourceRegistry) {
     .slice(-4)
     .map(
       (t) =>
-        `<user>${t.question}</user>\n<assistant>${t.answer.length > 3000 ? `${t.answer.slice(0, 3000)}…` : t.answer}</assistant>`,
+        `<user>${t.question}</user>\n<assistant>${t.answer.length > 3000 ? `${t.answer.slice(0, 3000)}…` : t.answer}</assistant>${
+          t.ranking ? `\n<ranking>Shown with this reply — ${t.ranking}</ranking>` : ""
+        }`,
     );
   const scope = state.scopeKeys.length
     ? `<scope>The user pointed this conversation at: ${state.scopeKeys.join(", ")}</scope>`

@@ -23,6 +23,7 @@ import {
   paperTags,
   tags,
 } from "@/server/db/schema";
+import { placementHints } from "@/server/library/placement";
 import { getPaperDetail, getPaperSummaries } from "@/server/papers/service";
 import { clean, describePapers, paperSource, ToolInputError, type ToolContext, type ToolResult } from "./tools";
 
@@ -163,6 +164,17 @@ type SavedSort = (typeof SAVED_SORTS)[number];
 
 const FIND_LIMIT = 60;
 const FIND_MAX = 100;
+/** "5 min ago", "3 h ago", "2 days ago" — when a paper was added (the planner has no clock). */
+export function ago(date: Date | undefined, now = new Date()) {
+  if (!date) return "at an unknown time";
+  const minutes = Math.max(0, Math.round((now.getTime() - date.getTime()) / 60_000));
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return `${hours} h ago`;
+  return `${Math.round(hours / 24)} days ago`;
+}
+
 /** Enough of an abstract to tell what a paper is about; a whole library (a few hundred papers) still fits. */
 const LISTED_ABSTRACT_CHARS = 300;
 
@@ -258,7 +270,7 @@ export async function findSavedPapers(ctx: ToolContext, f: SavedPaperFilter): Pr
   const limit = Math.min(FIND_MAX, Math.max(1, f.limit ?? FIND_LIMIT));
   const [rows, [{ total }]] = await Promise.all([
     db
-      .select({ id: papers.id, status: libraryItems.status })
+      .select({ id: papers.id, status: libraryItems.status, addedAt: libraryItems.createdAt })
       .from(libraryItems)
       .innerJoin(papers, eq(papers.id, libraryItems.paperId))
       .where(where)
@@ -289,6 +301,7 @@ export async function findSavedPapers(ctx: ToolContext, f: SavedPaperFilter): Pr
       : [],
   ]);
   const status = new Map(rows.map((r) => [r.id, r.status]));
+  const addedAt = new Map(rows.map((r) => [r.id, r.addedAt]));
   const pdf = new Set(withPdf.map((r) => r.id));
   const cols = new Map<string, string[]>();
   for (const m of memberships) cols.set(m.paperId, [...(cols.get(m.paperId) ?? []), m.name]);
@@ -321,7 +334,8 @@ export async function findSavedPapers(ctx: ToolContext, f: SavedPaperFilter): Pr
   const lines = summaries.map((p) => {
     const s = ctx.sources.addPaper(p);
     const inCols = cols.get(p.id) ?? [];
-    return `- ${s.key}: ${p.title} (${p.year ?? "n.d."}) · ${status.get(p.id)}${pdf.has(p.id) ? " · PDF" : ""}${
+    const added = f.sort === "added" ? ` · added ${ago(addedAt.get(p.id))}` : "";
+    return `- ${s.key}: ${p.title} (${p.year ?? "n.d."}) · ${status.get(p.id)}${added}${pdf.has(p.id) ? " · PDF" : ""}${
       p.publicationTypes.includes("review") ? " · review" : ""
     }${inCols.length ? ` · in ${inCols.map((c) => `“${c}”`).join(", ")}` : ""}${
       f.abstracts && p.abstract ? `\n  Abstract: ${clean(p.abstract, LISTED_ABSTRACT_CHARS)}` : ""
@@ -554,5 +568,68 @@ export async function readReviews(ctx: ToolContext, key: string): Promise<ToolRe
         : "Reviews are not available: they need an OpenReview account set on the server (OPENREVIEW_USERNAME / OPENREVIEW_PASSWORD)."
     }`,
     count: info.reviews.length,
+  };
+}
+
+/**
+ * Where papers may belong in the workspace, one line per paper: "- P1: collection “X” (why); concept “Y” (why)"
+ * (hints from concept names and citations, found without AI).
+ */
+export async function placementLines(workspaceId: string, items: { key: string; id: string }[]) {
+  const hints = await placementHints(
+    workspaceId,
+    items.map((i) => i.id),
+  );
+  return items.flatMap(({ key, id }) => {
+    const h = hints.get(id);
+    if (!h) return [];
+    const found = [
+      ...h.collections.map((c) => `collection “${c.name}” (${c.why})`),
+      ...h.concepts.map((c) => `concept “${c.name}” (${c.why})`),
+    ];
+    return [`- ${key}: ${found.length ? found.join("; ") : "no hints"}`];
+  });
+}
+
+/** Hints for where papers belong, with each paper's abstract to judge them by and where it already is. */
+export async function suggestPlacement(ctx: ToolContext, keys: string[]): Promise<ToolResult> {
+  const items = [
+    ...new Map(keys.map((k) => paperSource(ctx, k)).map((s) => [s.key, { key: s.key, id: s.id }])).values(),
+  ];
+  const ids = items.map((i) => i.id);
+  const [lines, rows, inCollections, inConcepts] = await Promise.all([
+    placementLines(ctx.workspaceId, items),
+    db.select({ id: papers.id, abstract: papers.abstract }).from(papers).where(inArray(papers.id, ids)),
+    db
+      .select({ paperId: collectionPapers.paperId, name: collections.name })
+      .from(collectionPapers)
+      .innerJoin(collections, eq(collections.id, collectionPapers.collectionId))
+      .where(and(eq(collections.workspaceId, ctx.workspaceId), inArray(collectionPapers.paperId, ids))),
+    db
+      .select({ paperId: paperConcepts.paperId, name: concepts.name })
+      .from(paperConcepts)
+      .innerJoin(concepts, eq(concepts.id, paperConcepts.conceptId))
+      .where(and(eq(concepts.workspaceId, ctx.workspaceId), inArray(paperConcepts.paperId, ids))),
+  ]);
+  const abstractOf = new Map(rows.map((r) => [r.id, r.abstract]));
+  const names = (list: { paperId: string; name: string }[], id: string) =>
+    list.filter((r) => r.paperId === id).map((r) => `“${r.name}”`);
+  const details = items.map(({ key, id }) => {
+    const already = [
+      names(inCollections, id).length ? `collections ${names(inCollections, id).join(", ")}` : "",
+      names(inConcepts, id).length ? `concepts ${names(inConcepts, id).join(", ")}` : "",
+    ].filter(Boolean);
+    const abstract = abstractOf.get(id);
+    return [
+      lines.find((l) => l.startsWith(`- ${key}:`)) ?? `- ${key}: no hints`,
+      already.length ? `  Already in: ${already.join("; ")}` : "",
+      `  Abstract: ${abstract ? clean(abstract, 600) : "none available (read_paper for its text)"}`,
+    ]
+      .filter(Boolean)
+      .join("\n");
+  });
+  return {
+    report: `Where these papers may belong — hints from concept names and citations (judge each by its abstract against all collections and concepts in list_workspace; a paper can fit where no hint points):\n${details.join("\n")}`,
+    count: items.length,
   };
 }
