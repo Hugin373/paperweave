@@ -25,6 +25,7 @@ import {
   RotateCcw,
   Search,
   Trash2,
+  TrendingUp,
   Wand2,
   type LucideIcon,
 } from "lucide-react";
@@ -84,6 +85,7 @@ const STEP_ICON: Record<ResearchStepKind, LucideIcon> = {
   write: PenLine,
   rank: ListOrdered,
   playbook: BookMarked,
+  trend: TrendingUp,
 };
 
 function citedKeys(markdown: string) {
@@ -170,9 +172,9 @@ function Activity({ message }: { message: ResearchMessageDto }) {
   const counts = `${actions} step${actions === 1 ? "" : "s"} · ${message.sources.length} sources`;
   const summary =
     message.status === "running"
-      ? `${message.mode === "deep" ? "Researching" : "Working"}… ${counts} so far`
+      ? `${message.mode === "deep" || message.mode === "field" ? "Researching" : "Working"}… ${counts} so far`
       : message.status === "done"
-        ? `${message.mode === "deep" ? "Researched" : "Worked"} for ${elapsed(message)} · ${counts}`
+        ? `${message.mode === "deep" || message.mode === "field" ? "Researched" : "Worked"} for ${elapsed(message)} · ${counts}`
         : `${message.status === "error" ? "Failed" : "Stopped"} after ${elapsed(message)} · ${counts}`;
   if (!message.steps.length) {
     return running ? (

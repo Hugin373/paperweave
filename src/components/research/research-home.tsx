@@ -25,6 +25,7 @@ const EXAMPLES: { text: string; mode: ResearchMode }[] = [
     mode: "search",
   },
   { text: "What are the open problems in retrieval-augmented generation?", mode: "deep" },
+  { text: "Analyze the field of spatial AI: trends, current gaps and possible research directions", mode: "field" },
 ];
 
 export const STATUS_ICON: Record<ResearchStatus, { icon: typeof CheckCircle2; label: string; className: string }> = {

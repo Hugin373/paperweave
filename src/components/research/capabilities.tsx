@@ -4,8 +4,7 @@ import { CircleHelp, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 import { ASSISTANT_CANNOT, ASSISTANT_CAPABILITIES } from "@/lib/assistant-capabilities";
-
-type Mode = "chat" | "search" | "deep";
+import type { ResearchMode as Mode } from "@/lib/types";
 
 /**
  * Everything the assistant can do, with example requests. `onPick` makes the examples clickable (they fill

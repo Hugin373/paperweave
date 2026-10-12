@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUp, FolderOpen, Globe, MessagesSquare, Square, Telescope, Wand2, X } from "lucide-react";
+import { ArrowUp, Compass, FolderOpen, Globe, MessagesSquare, Square, Telescope, Wand2, X } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/menu";
@@ -23,6 +23,11 @@ export const MODE_INFO: Record<ResearchMode, { label: string; hint: string; icon
     label: "Deep research",
     hint: "Searches in several rounds, follows citations and reads key papers, then writes a cited report. Takes a few minutes.",
     icon: Telescope,
+  },
+  field: {
+    label: "Field analysis",
+    hint: "Maps a whole field: publication trends, the main sub-areas, current gaps and possible research directions. Takes longer than deep research.",
+    icon: Compass,
   },
 };
 
@@ -62,13 +67,13 @@ function ToolToggle({
   );
 }
 
-/** The assistant's per-message tools: literature search and deep research (which implies search). */
+/** The assistant's per-message tools: literature search, and deep research or field analysis (which imply search). */
 export function ModeToggles({ value, onChange }: { value: ResearchMode; onChange: (m: ResearchMode) => void }) {
   return (
     <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Assistant tools">
       <ToolToggle
         on={value !== "chat"}
-        disabled={value === "deep"}
+        disabled={value === "deep" || value === "field"}
         onChange={(on) => onChange(on ? "search" : "chat")}
         icon={MODE_INFO.search.icon}
         label={MODE_INFO.search.label}
@@ -80,6 +85,13 @@ export function ModeToggles({ value, onChange }: { value: ResearchMode; onChange
         icon={MODE_INFO.deep.icon}
         label={MODE_INFO.deep.label}
         hint={MODE_INFO.deep.hint}
+      />
+      <ToolToggle
+        on={value === "field"}
+        onChange={(on) => onChange(on ? "field" : "search")}
+        icon={MODE_INFO.field.icon}
+        label={MODE_INFO.field.label}
+        hint={MODE_INFO.field.hint}
       />
     </div>
   );
@@ -227,7 +239,7 @@ export function ResearchComposer({
             aria-label={large ? undefined : "Send"}
           >
             {!pending && <ArrowUp />}
-            {large && (mode === "deep" ? "Start research" : "Send")}
+            {large && (mode === "deep" || mode === "field" ? "Start research" : "Send")}
           </Button>
         )}
       </div>

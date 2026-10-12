@@ -1,7 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { markdownToDoc } from "@/lib/markdown-doc";
 import type { ResearchStepKind } from "@/lib/types";
-import { citedKeys, parseDecision, runResearchLoop, type ResearchSink } from "@/server/research/agent";
+import {
+  agentSystem,
+  citedKeys,
+  LIMITS,
+  parseDecision,
+  roundPrompt,
+  runResearchLoop,
+  writerPrompt,
+  type ResearchSink,
+} from "@/server/research/agent";
 import { SourceRegistry } from "@/server/research/tools";
 import type { AIProvider, CompletionRequest } from "@/server/ai/types";
 
@@ -164,5 +173,34 @@ describe("markdownToDoc", () => {
       text: "docs",
       marks: [{ type: "link", attrs: { href: "https://example.com" } }],
     });
+  });
+});
+
+describe("field analysis mode", () => {
+  const state = {
+    question: "Analyze the field of spatial AI",
+    mode: "field" as const,
+    history: [],
+    scopeKeys: [],
+    findings: [],
+    done: [],
+    changes: [],
+  };
+
+  it("has a larger budget than deep research and works in phases with trend counts", () => {
+    expect(LIMITS.field.rounds).toBeGreaterThan(LIMITS.deep.rounds);
+    expect(LIMITS.field.totalActions).toBeGreaterThan(LIMITS.deep.totalActions);
+    const system = agentSystem("field");
+    expect(system).toContain("Field analysis: the user wants a whole field mapped");
+    expect(system).toContain('{"tool": "publication_trend"');
+    expect(agentSystem("deep")).not.toContain("Field analysis:");
+    expect(roundPrompt(state, new SourceRegistry(), 1)).toContain("This is round 1 of at most 10.");
+  });
+
+  it("asks the writer for trends, gaps and research directions", () => {
+    const prompt = writerPrompt(state, new SourceRegistry());
+    for (const section of ["## Trends", "## Landscape", "## Current gaps", "## Research directions"]) {
+      expect(prompt).toContain(section);
+    }
   });
 });

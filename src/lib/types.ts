@@ -434,9 +434,10 @@ export interface MeResponse {
 /**
  * How the assistant works on a message. "chat": uses the workspace (library, notes, highlights, concepts,
  * known papers). "search": also searches the scholarly literature and follows citations. "deep": several
- * rounds of searching and reading, ending in a cited report.
+ * rounds of searching and reading, ending in a cited report. "field": a longer analysis of a whole field —
+ * publication trends, landscape, gaps and research directions.
  */
-export const RESEARCH_MODES = ["chat", "search", "deep"] as const;
+export const RESEARCH_MODES = ["chat", "search", "deep", "field"] as const;
 export type ResearchMode = (typeof RESEARCH_MODES)[number];
 export type ResearchStatus = "running" | "done" | "error" | "cancelled";
 
@@ -452,7 +453,8 @@ export type ResearchStepKind =
   | "note"
   | "write"
   | "rank"
-  | "playbook";
+  | "playbook"
+  | "trend";
 
 /** One visible step of the research process. */
 export interface ResearchStep {
@@ -714,6 +716,23 @@ export interface TopicSuggestion {
   field?: string;
   /** Thought up by the AI (the others come from the library and its citations). */
   ai?: boolean;
+}
+
+/** Papers published per year for one or more topics (OpenAlex, titles and abstracts). */
+export interface PublicationTrend {
+  years: number[];
+  series: {
+    query: string;
+    counts: number[];
+    /** Last three full years against the three before (0.5 = +50%); null without enough papers. */
+    growth: number | null;
+    /** The same, for the topic's share of all papers (growth beyond the literature's own). */
+    shareGrowth: number | null;
+  }[];
+  /** All papers per year, for comparison. */
+  all: number[];
+  /** The current year, when it is included and so not yet complete. */
+  partialYear: number | null;
 }
 
 export interface TopicSuggestionsResponse {

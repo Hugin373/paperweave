@@ -26,6 +26,7 @@ import { getPaperSummaries, getVisiblePaper } from "@/server/papers/service";
 import { ingestPapers } from "@/server/papers/ingest";
 import { scholarly } from "@/server/scholarly/service";
 import type { SearchSort, SearchSource } from "@/server/scholarly/types";
+import { publicationTrend } from "@/server/search/trend";
 import { SNIPPET_END, SNIPPET_START, searchWorkspace } from "@/server/search/workspace-search";
 import { numberedNote } from "./note-blocks";
 
@@ -189,6 +190,38 @@ export async function searchPapers(
   return {
     report: `Literature search "${input.query}" — results ${offset + 1}–${offset + res.items.length}${total}.${more}\n${describePapers(ctx, res.items, 400)}`,
     count: res.items.length,
+  };
+}
+
+/** "1.2M", "34k", "870" — compact counts for a table. */
+function compact(n: number) {
+  if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
+  if (n >= 1e4) return `${Math.round(n / 1e3)}k`;
+  return n.toLocaleString("en-US");
+}
+
+const percent = (g: number) => `${g >= 0 ? "+" : ""}${Math.round(g * 100)}%`;
+
+/** Papers per year for topics (OpenAlex counts), as a table with growth figures. */
+export async function publicationTrendTool(
+  input: { queries: string[]; yearFrom?: number; yearTo?: number },
+  now = new Date(),
+): Promise<ToolResult> {
+  const t = await publicationTrend(input.queries, { yearFrom: input.yearFrom, yearTo: input.yearTo, now });
+  const header = `| Year | All papers | ${t.series.map((s) => `“${s.query}”`).join(" | ")} |`;
+  const rule = `|${" --- |".repeat(t.series.length + 2)}`;
+  const rows = t.years.map(
+    (y, i) =>
+      `| ${y}${y === t.partialYear ? " (so far)" : ""} | ${compact(t.all[i])} | ${t.series.map((s) => compact(s.counts[i])).join(" | ")} |`,
+  );
+  const growthLines = t.series.map((s) =>
+    s.growth === null
+      ? `- “${s.query}”: too few papers for a growth figure`
+      : `- “${s.query}”: ${percent(s.growth)} in the last three full years against the three before (${percent(s.shareGrowth ?? 0)} as a share of all papers)`,
+  );
+  return {
+    report: `Papers per year matching each query in titles and abstracts (OpenAlex; counts depend on the wording, so compare queries of similar breadth${t.partialYear ? `; ${t.partialYear} is not complete yet` : ""}):\n${[header, rule, ...rows].join("\n")}\nGrowth:\n${growthLines.join("\n")}`,
+    count: t.series.reduce((sum, s) => sum + s.counts.reduce((a, b) => a + b, 0), 0),
   };
 }
 

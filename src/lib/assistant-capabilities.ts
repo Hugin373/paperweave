@@ -3,12 +3,14 @@
  * tools behind it; a test checks that every tool the assistant has is listed here, so this cannot go stale.
  */
 
+import type { ResearchMode } from "./types";
+
 export interface AssistantCapability {
   title: string;
   /** Shown next to the title, e.g. which toggle it needs. */
   note?: string;
   items: { text: string; tools: string[] }[];
-  examples: { text: string; mode?: "chat" | "search" | "deep" }[];
+  examples: { text: string; mode?: ResearchMode }[];
 }
 
 export const ASSISTANT_CAPABILITIES: AssistantCapability[] = [
@@ -26,6 +28,19 @@ export const ASSISTANT_CAPABILITIES: AssistantCapability[] = [
     examples: [
       { text: "Find the most cited papers on 3D Gaussian splatting since 2023", mode: "search" },
       { text: "What are the newest preprints on world models for robotics?", mode: "search" },
+    ],
+  },
+  {
+    title: "Analyze a field",
+    note: "with Field analysis on",
+    items: [
+      {
+        text: "Map a field's trends with papers-per-year counts, its sub-areas, current gaps and possible research directions",
+        tools: ["publication_trend"],
+      },
+    ],
+    examples: [
+      { text: "Analyze the field of spatial AI: trends, current gaps and possible research directions", mode: "field" },
     ],
   },
   {

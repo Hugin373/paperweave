@@ -23,6 +23,7 @@ import { useSaveSearch } from "@/components/alerts/alerts-view";
 import { PaperCard } from "@/components/papers/paper-card";
 import { ReadAction } from "@/components/papers/read-action";
 import { SaveControl } from "@/components/papers/save-control";
+import { TrendButton, TrendChart } from "@/components/search/trend-chart";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
@@ -327,6 +328,7 @@ export function SearchView() {
 
   const q = params.get("q") ?? "";
   const saveSearch = useSaveSearch();
+  const [showTrend, setShowTrend] = useState(false);
   const underReview = params.get("review") === "1";
   const mode = (params.get("mode") ?? "all") as (typeof MODES)[number]["id"];
   const exact = params.get("exact") === "true";
@@ -718,6 +720,9 @@ export function SearchView() {
                   Save search
                 </Button>
               )}
+              {first.provider !== "identifier" && mode !== "author" && (
+                <TrendButton on={showTrend} onChange={setShowTrend} />
+              )}
               {aiEnabled && items.length > 1 && (
                 <Button size="sm" variant="ai" onClick={summarize} loading={summary.loading}>
                   <Sparkles />
@@ -726,6 +731,8 @@ export function SearchView() {
               )}
             </div>
           )}
+
+          {showTrend && first && first.provider !== "identifier" && mode !== "author" && <TrendChart query={q} />}
 
           <AiOutput text={summary.text} loading={summary.loading} error={summary.error} />
 

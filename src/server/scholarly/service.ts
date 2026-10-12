@@ -162,6 +162,21 @@ export class ScholarlyService {
     return result ?? { provider: providers[0]?.name ?? "openalex", papers: [], total: 0 };
   }
 
+  /**
+   * Works published per year matching a query in titles and abstracts (all works when null), from OpenAlex
+   * (cached for a day). Keys are the years, missing years had none.
+   */
+  async yearCounts(query: string | null, yearFrom: number, yearTo: number): Promise<Map<number, number>> {
+    const openalex = this.openalex ?? (this.yearCountSource ??= new OpenAlexProvider(this.contactEmail));
+    const entries = await this.withFailover([openalex], () =>
+      cached(cacheKey("year-counts", query?.toLowerCase() ?? null, yearFrom, yearTo), 24, async () => [
+        ...(await openalex.countsByYear(query, yearFrom, yearTo)).entries(),
+      ]),
+    );
+    return new Map(entries ?? []);
+  }
+  private yearCountSource: OpenAlexProvider | undefined;
+
   private refFor(provider: ScholarlyProvider, ids: PaperIds): PaperRef | null {
     for (const kind of provider.lookupKinds) {
       const value = ids[kind];

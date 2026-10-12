@@ -34,6 +34,7 @@ import {
   existingConcepts,
   listWorkspace,
   paperLine,
+  publicationTrendTool,
   readNote,
   readPaper,
   searchArxiv,
@@ -50,10 +51,11 @@ export const LIMITS: Record<ResearchMode, { rounds: number; actionsPerRound: num
   chat: { rounds: 4, actionsPerRound: 8, totalActions: 24 },
   search: { rounds: 4, actionsPerRound: 8, totalActions: 24 },
   deep: { rounds: 6, actionsPerRound: 8, totalActions: 40 },
+  field: { rounds: 10, actionsPerRound: 10, totalActions: 80 },
 };
 
 /** Tools that reach outside the workspace; only available when literature search is on. */
-const LITERATURE_TOOLS = new Set(["search_papers", "search_arxiv", "references", "citations"]);
+const LITERATURE_TOOLS = new Set(["search_papers", "search_arxiv", "references", "citations", "publication_trend"]);
 
 const MAX_FINDINGS_CHARS = 100_000;
 const MAX_SOURCE_LINES = 150;
@@ -98,6 +100,12 @@ const readActionSchema = z.discriminatedUnion("tool", [
     offset,
   }),
   z.object({ tool: z.literal("search_arxiv"), query: z.string().trim().min(2).max(300) }),
+  z.object({
+    tool: z.literal("publication_trend"),
+    queries: z.array(z.string().trim().min(2).max(200)).min(1).max(6),
+    year_from: year,
+    year_to: year,
+  }),
   z.object({
     tool: z.literal("references"),
     paper: key,
@@ -250,6 +258,8 @@ function actionId(a: ResearchAction) {
       return `search:${a.source ?? ""}:${norm(a.query)}:${a.year_from ?? ""}:${a.year_to ?? ""}:${a.min_citations ?? ""}:${a.sort ?? ""}:${a.offset ?? 0}`;
     case "search_arxiv":
       return `arxiv:${norm(a.query)}`;
+    case "publication_trend":
+      return `trend:${a.queries.map(norm).join("|")}:${a.year_from ?? ""}:${a.year_to ?? ""}`;
     case "search_library":
       return `library:${norm(a.query)}:${a.kind ?? ""}:${a.offset ?? 0}`;
     case "read_paper":
@@ -320,6 +330,8 @@ function describeRead(a: ReadAction, sources: SourceRegistry): { kind: ResearchS
     }
     case "search_arxiv":
       return { kind: "search", label: `Checked arXiv for the newest preprints on “${a.query}”` };
+    case "publication_trend":
+      return { kind: "trend", label: `Counted papers per year on ${a.queries.map((q) => `“${q}”`).join(", ")}` };
     case "references":
       return { kind: "references", label: `Followed the references of ${title(a.paper)}` };
     case "citations":
@@ -434,6 +446,8 @@ export function toolFor(a: ReadAction, sources: SourceRegistry): ToolSpec {
         });
       case "search_arxiv":
         return searchArxiv(ctx, a.query);
+      case "publication_trend":
+        return publicationTrendTool({ queries: a.queries, yearFrom: a.year_from, yearTo: a.year_to });
       case "references":
       case "citations":
         return citationNeighbors(ctx, a.paper, a.tool, { offset: a.offset, sort: a.sort });
@@ -515,13 +529,14 @@ export function toolFor(a: ReadAction, sources: SourceRegistry): ToolSpec {
 // Prompts
 // ---------------------------------------------------------------------------
 
-function agentSystem(mode: ResearchMode) {
+export function agentSystem(mode: ResearchMode) {
   const literature =
     mode === "chat"
       ? ""
       : `
 - {"tool": "search_papers", "query": "...", "year_from": 2019, "year_to": 2024, "min_citations": 50, "sort": "newest", "source": "general", "offset": 10} — search the scholarly literature (10 results per call; "offset" pages further). Filters, sort and source are optional; sort is "relevance" (default), "newest" or "citations". source is "general" (default: Semantic Scholar / OpenAlex, every field), "biomedical" (Europe PMC: PubMed, PubMed Central, medRxiv/bioRxiv — use for clinical and life-science topics; supports newest and citations sorting) or "openreview" (ML venues such as ICLR, NeurIPS, ICML, with accept/reject status in the venue; no citation counts; papers still under double-blind review are left out unless "under_review": true — they are anonymous and have no free PDF). Use precise field terminology; vary phrasings and sub-topics instead of repeating a query.
 - {"tool": "search_arxiv", "query": "..."} — the most recently posted arXiv preprints matching all query words (days old; often not yet in the other databases). Use it when the user wants the latest work.
+- {"tool": "publication_trend", "queries": ["<topic>", "<sub-area>", ...], "year_from": 2015} — how many papers were published each year on up to 6 topics (titles and abstracts; default: the last 10 years), against all papers, with growth figures. Use it for claims about growth or decline instead of guessing; give queries of similar breadth, as a researcher would phrase the topic.
 - {"tool": "references", "paper": "P3"} — the papers P3 cites (foundational, earlier work).
 - {"tool": "citations", "paper": "P3", "sort": "newest"} — papers that cite P3 (follow-up and recent work). Both list 15 at a time, most cited first or "sort": "newest"; "offset" pages further.`;
   const modeGuide =
@@ -529,7 +544,9 @@ function agentSystem(mode: ResearchMode) {
       ? `Literature search is OFF: you can use the user's workspace and papers already in <sources>, but not search for new papers. If the user needs papers you cannot find there, finish; the reply will suggest turning on literature search.`
       : mode === "search"
         ? `Literature search is ON: search the scholarly literature when the request needs papers beyond the workspace. Stay focused (1-3 rounds).`
-        : `Deep research: be thorough. Start broad (2-4 searches covering different angles), then go deep — identify the most cited/seminal papers (sort "citations") and the newest strong papers (sort "newest", plus search_arxiv for the very latest), follow references for foundations and citations for recent progress, and read the papers that matter most before finishing. Use several rounds.`;
+        : mode === "deep"
+          ? `Deep research: be thorough. Start broad (2-4 searches covering different angles), then go deep — identify the most cited/seminal papers (sort "citations") and the newest strong papers (sort "newest", plus search_arxiv for the very latest), follow references for foundations and citations for recent progress, and read the papers that matter most before finishing. Use several rounds.`
+          : FIELD_GUIDE;
   return `# Paperweave assistant
 You are the planning half of an AI assistant inside a scientific knowledge workspace: the user's papers (library), collections, tags, concepts, notes and PDF highlights. You do not write the reply yourself: you decide which actions to take next. Paperweave runs them and shows you the results in the next round; afterwards a separate step writes the reply.
 
@@ -631,11 +648,29 @@ Rules:
 - If the user asked for something the assistant cannot do, say so and where in the app to do it. ${CANNOT_DO}
 - Write well-structured Markdown, as long as the request needs and no longer. Do not include a reference list at the end (Paperweave shows the sources).`;
 
+/** How the planner works in "field" mode: a whole field, in phases, with the budget spread across them. */
+const FIELD_GUIDE = `Field analysis: the user wants a whole field mapped — its trends, landscape, current gaps and promising research directions. You have a large budget (several rounds); spread it over these phases rather than spending it all on searching:
+  1. Scope (round 1): a broad search_papers (sort "citations") and one sort "newest", plus the user's own related papers (find_saved_papers with a query, list_workspace). Name the field's 4–8 sub-areas (methods, tasks, data or modalities, applications). If the field's name is ambiguous ("spatial AI"), take the reading closest to the user's library and broad usage, and keep it.
+  2. Trends: one publication_trend call with the field and its sub-areas (similar breadth), and search_papers with "year_from" (last 2–3 years) sort "citations" for the recent breakthroughs that drive the growth; search_arxiv for what appeared in the last weeks.
+  3. Landscape: per sub-area, the seminal papers (sort "citations", references of key papers) and the current state of the art (citations of key papers with "sort": "newest").
+  4. Gaps: read the 5–10 most important recent papers with a focus on limitations and future work (find_passages with "limitation", "future work", "fails"), look for benchmarks that are saturated or criticized, and for combinations of sub-areas nobody has tried. Check each candidate gap with a targeted search before trusting it.
+  5. Directions: for each strong gap, a concrete research topic; check it is open with a targeted search_papers and search_arxiv. Prefer topics that build on the user's library.
+Finish when every phase has evidence; the report states what was not covered.`;
+
 const DEEP_FORMAT = `Write a research report:
 ## Overview — a direct answer to the question in a few sentences.
 Then sections organized by theme or approach (use descriptive headings), covering the key ideas and how they developed, with the most important papers (seminal and recent) and how they relate.
 ## Open problems — limitations, disagreements and gaps in the literature.
 ## Where to start reading — 3-6 papers in a sensible reading order, one line each on why.`;
+
+const FIELD_FORMAT = `Write a field analysis:
+## Overview — the field as scoped here (what is in, what is out, its sub-areas) and the answer in brief: where it is heading, the biggest gaps, the most promising directions.
+## Trends — growth with the numbers from the publication counts (cite the years; say when the current year is incomplete and that counts depend on wording), which sub-areas are rising or fading, and the papers that set off each shift. Include a small Markdown table of the counts.
+## Landscape — one subsection per sub-area: the key ideas, seminal and state-of-the-art papers, and how they relate.
+## Current gaps — each gap: what is missing, the evidence (papers stating it, untried combinations, saturated or criticized benchmarks), and how sure you are.
+## Research directions — 3–6 concrete research topics, each with: the question, why now, the closest existing papers, a first experiment, and the main risk. Mark those that build on the user's own library.
+## Where to start reading — 4–8 papers in a sensible order, one line each on why.
+Say what was not covered (sub-areas or sources not searched).`;
 
 const CHAT_FORMAT = `Reply conversationally and directly, citing sources where you rely on them.`;
 
@@ -743,7 +778,7 @@ Reply with JSON only.`;
 export function writerPrompt(state: ResearchState, sources: SourceRegistry) {
   return `${contextBlocks(state, sources)}
 
-${state.mode === "deep" ? DEEP_FORMAT : CHAT_FORMAT}${state.mode === "chat" ? `\n${NO_SEARCH_HINT}` : ""}
+${state.mode === "deep" ? DEEP_FORMAT : state.mode === "field" ? FIELD_FORMAT : CHAT_FORMAT}${state.mode === "chat" ? `\n${NO_SEARCH_HINT}` : ""}
 Reply to the message in <question>${state.history.length ? " (it continues the conversation above)" : ""}.`;
 }
 
@@ -867,7 +902,14 @@ export async function runResearchLoop(opts: {
     state.changes = await opts.beforeWrite(state.changes);
     sink.changes(state.changes);
   }
-  const writeId = sink.step("write", state.mode === "deep" ? "Writing the report" : "Writing the reply");
+  const writeId = sink.step(
+    "write",
+    state.mode === "deep"
+      ? "Writing the report"
+      : state.mode === "field"
+        ? "Writing the field analysis"
+        : "Writing the reply",
+  );
   let text = "";
   try {
     for await (const chunk of provider.stream({

@@ -341,6 +341,26 @@ export class OpenAlexProvider implements ScholarlyProvider {
     return this.works(params);
   }
 
+  /**
+   * How many works were published each year, matching `query` in their titles and abstracts (all works when
+   * null). One grouped request, however many years.
+   */
+  async countsByYear(query: string | null, yearFrom: number, yearTo: number): Promise<Map<number, number>> {
+    const filters = [`publication_year:${yearFrom}-${yearTo}`];
+    const clean = query?.replace(/[,:|]/g, " ").trim();
+    if (clean) filters.push(`title_and_abstract.search:${clean}`);
+    const data = await this.get<{ group_by?: { key: string; count: number }[] }>("/works", {
+      filter: filters.join(","),
+      group_by: "publication_year",
+    });
+    const counts = new Map<number, number>();
+    for (const g of data?.group_by ?? []) {
+      const year = Number(g.key);
+      if (Number.isInteger(year) && year >= yearFrom && year <= yearTo) counts.set(year, g.count);
+    }
+    return counts;
+  }
+
   private async works(params: Record<string, string>): Promise<SearchPage> {
     const data = await this.get<OAList>("/works", params);
     const papers = (data?.results ?? []).map(mapOpenAlexWork).filter((p): p is NormalizedPaper => p !== null);
