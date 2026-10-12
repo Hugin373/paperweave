@@ -221,7 +221,9 @@ const OA_TYPE: Record<string, string> = {
 
 export class OpenAlexProvider implements ScholarlyProvider {
   readonly name = "openalex" as const;
-  readonly lookupKinds: readonly IdentifierKind[] = ["openalex", "doi", "pmid", "pmcid"];
+  // arXiv preprints are found by their arXiv DOI, so they too have references and citations when Semantic
+  // Scholar is unavailable.
+  readonly lookupKinds: readonly IdentifierKind[] = ["openalex", "doi", "pmid", "pmcid", "arxiv"];
   readonly supportsSearch = true;
   readonly supportsCitations = true;
   private readonly throttle = new Throttle(110);
@@ -355,6 +357,8 @@ export class OpenAlexProvider implements ScholarlyProvider {
         return this.get<OAWork>(`/works/pmid:${ref.value}`, { select });
       case "pmcid":
         return this.get<OAWork>(`/works/pmcid:${ref.value}`, { select });
+      case "arxiv":
+        return this.get<OAWork>(`/works/doi:10.48550/arxiv.${ref.value}`, { select });
       default:
         return null;
     }

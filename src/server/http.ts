@@ -104,6 +104,12 @@ export function handler<P = Record<string, string>>(fn: Handler<P>) {
       if (out instanceof Response) return out;
       return Response.json(out ?? { ok: true });
     } catch (err) {
+      // Shown to the user as "rate limiting / unavailable": logged too, with what was asked and which sources
+      // refused, so it can be traced (the error itself is expected and not a bug).
+      if (err instanceof ScholarlyUnavailableError) {
+        const who = err.failures.map((f) => `${f.provider}: ${f.message}${f.quota ? " (daily quota)" : ""}`).join("; ");
+        console.warn(`[scholarly] ${req.method} ${req.nextUrl.pathname}${req.nextUrl.search} — ${who}`);
+      }
       return errorResponse(err);
     }
   };

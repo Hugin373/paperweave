@@ -228,6 +228,12 @@ function Sidebar({
   );
 }
 
+const SIDEBAR_DEFAULT = 240;
+const SIDEBAR_MIN = 200;
+const SIDEBAR_MAX = 400;
+const clampSidebar = (w: number) =>
+  Number.isFinite(w) ? Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, Math.round(w))) : SIDEBAR_DEFAULT;
+
 export function AppShell({
   user,
   singleUser,
@@ -243,6 +249,27 @@ export function AppShell({
   // The desktop sidebar can be hidden (Ctrl/⌘ + \) to give pages the full width; remembered per browser.
   const [nav, setNav] = usePersistentState("pw-sidebar", "open", ["open", "closed"] as const);
   const navOpen = nav === "open";
+  // Its width: dragged at its right edge (remembered per browser); live while dragging, saved on release.
+  const [storedWidth, setStoredWidth] = usePersistentState("pw-sidebar-width", String(SIDEBAR_DEFAULT));
+  const [dragWidth, setDragWidth] = useState<number | null>(null);
+  const width = dragWidth ?? clampSidebar(Number(storedWidth));
+  const startResize = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = width;
+    const at = (x: number) => clampSidebar(startWidth + x - startX);
+    const move = (ev: PointerEvent) => setDragWidth(at(ev.clientX));
+    const up = (ev: PointerEvent) => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      document.body.classList.remove("cursor-col-resize", "select-none");
+      setStoredWidth(String(at(ev.clientX)));
+      setDragWidth(null);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    document.body.classList.add("cursor-col-resize", "select-none");
+  };
   const pathname = usePathname();
   const fullBleed = /^\/papers\/[^/]+\/(read|graph)/.test(pathname) || pathname.startsWith("/graph");
 
@@ -272,15 +299,40 @@ export function AppShell({
       <aside
         id="app-sidebar"
         inert={!navOpen}
+        style={{ width: navOpen ? width : 0 }}
         className={cn(
-          "sticky top-0 hidden h-dvh shrink-0 overflow-hidden bg-surface-2/40 transition-[width] duration-200 ease-out md:block",
-          navOpen ? "w-60 border-r border-border" : "w-0",
+          "sticky top-0 hidden h-dvh shrink-0 overflow-hidden bg-surface-2/40 md:block",
+          dragWidth === null && "transition-[width] duration-200 ease-out",
+          navOpen && "border-r border-border",
         )}
       >
         {/* visibility switches after the width transition, so the content stays visible while it slides. */}
-        <div className={cn("h-full w-60 transition-[visibility] duration-200", !navOpen && "invisible")}>
+        <div style={{ width }} className={cn("h-full transition-[visibility] duration-200", !navOpen && "invisible")}>
           <Sidebar user={user} singleUser={singleUser} />
         </div>
+        {navOpen && (
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize sidebar"
+            aria-valuemin={SIDEBAR_MIN}
+            aria-valuemax={SIDEBAR_MAX}
+            aria-valuenow={width}
+            tabIndex={0}
+            title="Drag to resize · double-click to reset"
+            onPointerDown={startResize}
+            onDoubleClick={() => setStoredWidth(String(SIDEBAR_DEFAULT))}
+            onKeyDown={(e) => {
+              if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+              e.preventDefault();
+              setStoredWidth(String(clampSidebar(width + (e.key === "ArrowRight" ? 16 : -16))));
+            }}
+            className={cn(
+              "absolute top-0 right-0 z-10 h-full w-1.5 cursor-col-resize transition-colors hover:bg-accent/30 focus-visible:bg-accent/40 focus-visible:outline-none",
+              dragWidth !== null && "bg-accent/40",
+            )}
+          />
+        )}
       </aside>
 
       {mobileOpen && (
