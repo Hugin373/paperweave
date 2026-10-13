@@ -4,11 +4,32 @@ A research knowledge workspace for scientific papers. Find the important papers 
 that came before and after them, read and annotate PDFs, take linked notes, and see how everything connects —
 with or without AI.
 
+![Searching the literature: results with citations and open access, and how many papers on the topic appear each year](.github/screenshots/search.png)
+
 ```
 Research question → discover papers → evaluate → explore lineage → read → understand
         ↑                                                                   ↓
    discover more  ←  search your knowledge  ←  connect ideas  ←  take notes
 ```
+
+## A quick look
+
+**Read and annotate.** Open-access PDFs open in the built-in reader. Highlight and comment, write notes beside
+the paper, and follow its citations without leaving the page.
+
+![The PDF reader with highlights and comments in the side panel](.github/screenshots/reader.png)
+
+**See how it connects.** Your papers, concepts and notes as one graph, with citations between papers and the
+links you made yourself.
+
+![The knowledge graph of a small library: papers, concepts and notes](.github/screenshots/graph.png)
+
+**Ask the assistant (optional).** It searches your library and the literature, reads the papers that matter
+and writes a cited report — every step is shown, and every claim links to its source.
+
+![A Deep research report from the assistant, with its steps and cited sources](.github/screenshots/assistant.png)
+
+<sub>Screenshots show a demo workspace of well-known papers.</sub>
 
 ## Features
 
