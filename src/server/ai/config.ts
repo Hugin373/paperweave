@@ -11,6 +11,8 @@ import {
   type AiModelOption,
   type AiProviderKind,
   type AiProviderSettingsDto,
+  DEFAULT_LOCAL_MODEL_SETTINGS,
+  type LocalModelSettings,
 } from "@/lib/types";
 import { decryptSecret, encryptSecret } from "@/server/crypto";
 import { db } from "@/server/db/client";
@@ -21,6 +23,7 @@ import { assertPublicUrl, UnsafeUrlError } from "@/server/net/safe-fetch";
 import { AnthropicProvider, ANTHROPIC_DEFAULT_MODEL } from "./providers/anthropic";
 import { CLAUDE_CODE_DEFAULT_MODEL, ClaudeCodeProvider, CODEX_DEFAULT_MODEL, CodexProvider } from "./providers/cli";
 import { MockProvider } from "./providers/mock";
+import { resolveLocalModel } from "./local-detect";
 import { OpenAICompatibleProvider } from "./providers/openai";
 import { AIError, complete, type AIProvider, type ProviderConfig } from "./types";
 
@@ -36,6 +39,7 @@ export const PROVIDER_DEFAULT_MODEL: Record<AiProviderKind, string> = {
   openai: "gpt-5",
   openai_compatible: "",
   ollama: "llama3.1",
+  local: "",
   claude_code: CLAUDE_CODE_DEFAULT_MODEL,
   codex: CODEX_DEFAULT_MODEL,
   mock: "mock-1",
@@ -54,6 +58,7 @@ export function toConfigDto(
       baseUrl: r.baseUrl,
       hasApiKey: !!r.apiKeyEncrypted,
       apiKeyLast4: r.apiKeyLast4,
+      local: r.localSettings ?? null,
     };
   }
   return {
@@ -65,7 +70,10 @@ export function toConfigDto(
     baseUrl: row?.baseUrl ?? null,
     hasApiKey: !!row?.apiKeyEncrypted,
     apiKeyLast4: row?.apiKeyLast4 ?? null,
+    local: row?.localSettings ?? null,
     mockAvailable: env().AI_ENABLE_MOCK_PROVIDER,
+    // A local model lives on a private address, which this server may forbid.
+    localAvailable: env().AI_ALLOW_PRIVATE_ENDPOINTS,
     subscriptionAvailable: env().AI_ENABLE_SUBSCRIPTION_CLI,
     saved,
     connected: savedRows.filter(isUsable).map((r) => r.provider),
@@ -93,6 +101,8 @@ function isUsable(s: Pick<SettingsRow, "provider" | "apiKeyEncrypted" | "baseUrl
       return !!s.baseUrl;
     case "ollama":
       return true;
+    case "local":
+      return env().AI_ALLOW_PRIVATE_ENDPOINTS;
   }
 }
 
@@ -151,6 +161,8 @@ export interface AiConfigInput {
   enabled?: boolean;
   /** null or undefined: the provider's default. */
   effort?: AiEffort | null;
+  /** Local models only. */
+  local?: LocalModelSettings | null;
 }
 
 async function validateBaseUrl(url: string | null | undefined) {
@@ -178,11 +190,17 @@ function validateInput(input: AiConfigInput) {
   if (input.provider === "mock" && !env().AI_ENABLE_MOCK_PROVIDER) {
     throw badRequest("The mock provider is not enabled on this server.");
   }
+  if (input.provider === "local" && !env().AI_ALLOW_PRIVATE_ENDPOINTS) {
+    throw badRequest("This server does not allow connecting to local models.");
+  }
   if (isSubscription(input.provider) && !env().AI_ENABLE_SUBSCRIPTION_CLI) {
     throw badRequest("Subscription providers (Claude Code, Codex) are not enabled on this server.");
   }
   // Codex picks its own default model when none is given.
-  if (!input.model.trim() && input.provider !== "codex") throw badRequest("Please enter a model name.");
+  // Codex picks its own default model; a local model with no name follows whatever its server runs.
+  if (!input.model.trim() && input.provider !== "codex" && input.provider !== "local") {
+    throw badRequest("Please enter a model name.");
+  }
   if (input.provider === "openai_compatible" && !input.baseUrl) {
     throw badRequest("OpenAI-compatible endpoints need a base URL.");
   }
@@ -221,6 +239,7 @@ export async function saveAiConfig(workspaceId: string, userId: string, input: A
     baseUrl: subscription ? null : input.baseUrl?.trim() || null,
     apiKeyEncrypted,
     apiKeyLast4,
+    localSettings: input.provider === "local" ? (input.local ?? DEFAULT_LOCAL_MODEL_SETTINGS) : null,
   };
   const values = { ...settings, enabled: input.enabled ?? true, updatedBy: userId };
   return db.transaction(async (tx) => {
@@ -273,6 +292,7 @@ export function buildProvider(cfg: Omit<ProviderConfig, "fetch" | "timeoutMs">):
     case "openai":
     case "openai_compatible":
     case "ollama":
+    case "local":
       return new OpenAICompatibleProvider(full);
     case "claude_code":
     case "codex": {
@@ -302,7 +322,8 @@ export async function providerForWorkspace(workspaceId: string, choice?: AiChoic
   if (!row || !row.enabled) {
     throw new AIError("not_configured", "AI is not set up. Connect a provider in Settings → AI to use this.");
   }
-  let settings: Pick<SettingsRow, "provider" | "model" | "effort" | "baseUrl" | "apiKeyEncrypted"> = row;
+  let settings: Pick<SettingsRow, "provider" | "model" | "effort" | "baseUrl" | "apiKeyEncrypted" | "localSettings"> =
+    row;
   if (choice) {
     const [remembered] = await db
       .select()
@@ -315,7 +336,9 @@ export async function providerForWorkspace(workspaceId: string, choice?: AiChoic
         "The AI model you picked is not set up any more. Choose another one, or connect it in Settings → AI.",
       );
     }
-    if (!choice.model.trim() && choice.provider !== "codex") throw badRequest("Please choose a model.");
+    if (!choice.model.trim() && choice.provider !== "codex" && choice.provider !== "local") {
+      throw badRequest("Please choose a model.");
+    }
     settings = { ...base, model: choice.model.trim(), effort: choice.effort };
   }
   let apiKey: string | null = null;
@@ -326,12 +349,18 @@ export async function providerForWorkspace(workspaceId: string, choice?: AiChoic
       throw new AIError("auth", "The stored API key could not be read. Please enter it again in Settings → AI.");
     }
   }
+  // A local model is found when needed: the server running now, and the model it runs (or the one picked).
+  const target =
+    settings.provider === "local"
+      ? await resolveLocalModel({ baseUrl: settings.baseUrl, model: settings.model, apiKey })
+      : { baseUrl: settings.baseUrl, model: settings.model };
   return buildProvider({
     kind: settings.provider,
-    model: settings.model,
+    model: target.model,
     effort: settings.effort,
-    baseUrl: settings.baseUrl,
+    baseUrl: target.baseUrl,
     apiKey,
+    local: settings.localSettings,
   });
 }
 

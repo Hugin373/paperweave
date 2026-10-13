@@ -1,5 +1,5 @@
 import OpenAI from "openai";
-import type { AiEffort, AiProviderKind } from "@/lib/types";
+import { DEFAULT_LOCAL_MODEL_SETTINGS, type AiEffort, type AiProviderKind, type LocalModelSettings } from "@/lib/types";
 import { AIError, type AIProvider, type CompletionRequest, type ProviderConfig } from "../types";
 
 export const OLLAMA_DEFAULT_BASE_URL = "http://localhost:11434";
@@ -33,7 +33,7 @@ function mapError(err: unknown, vendor: string): AIError {
   if (err instanceof OpenAI.APIConnectionError) {
     return new AIError(
       "unavailable",
-      `Could not reach ${vendor}. Is the endpoint running and reachable from the server?`,
+      `Could not reach ${vendor.replace(/^The /, "the ")}. Is the ${vendor === VENDOR.local ? "model server" : "endpoint"} running and reachable from the server?`,
     );
   }
   if (err instanceof OpenAI.APIError) {
@@ -46,12 +46,14 @@ const VENDOR: Record<string, string> = {
   openai: "OpenAI",
   openai_compatible: "The AI endpoint",
   ollama: "Ollama",
+  local: "The local model",
 };
 
-/** OpenAI, any OpenAI-compatible server (vLLM, LM Studio, OpenRouter…), and Ollama. */
+/** OpenAI, any OpenAI-compatible API, local models (through the same API), and Ollama. */
 export class OpenAICompatibleProvider implements AIProvider {
   readonly kind: AiProviderKind;
   readonly model: string;
+  readonly local?: LocalModelSettings;
   private readonly client: OpenAI;
   private readonly effort: AiEffort | null;
 
@@ -59,6 +61,7 @@ export class OpenAICompatibleProvider implements AIProvider {
     this.kind = cfg.kind;
     this.model = cfg.model;
     this.effort = cfg.effort ?? null;
+    if (cfg.kind === "local") this.local = cfg.local ?? DEFAULT_LOCAL_MODEL_SETTINGS;
     this.client = new OpenAI({
       // Local servers usually ignore the key, but the SDK requires a value.
       apiKey: cfg.apiKey ?? (cfg.kind === "openai" ? undefined : "not-needed"),

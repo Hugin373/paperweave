@@ -127,6 +127,13 @@
       "when": 1791705093470,
       "tag": "0017_pdf_links",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1791823387624,
+      "tag": "0018_local_model",
+      "breakpoints": true
     }
   ]
 }

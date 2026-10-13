@@ -1,4 +1,5 @@
 import { eq } from "drizzle-orm";
+import { detectLocalServers, forgetDetectedServers } from "@/server/ai/local-detect";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   deleteAiConfig,
@@ -217,6 +218,93 @@ describe("optional AI configuration", () => {
     await expect(providerForWorkspace(ctx.workspaceId)).rejects.toMatchObject({ kind: "not_configured" });
   });
 
+  it("finds the local model on its own and follows what the server runs, or the model picked among several", async () => {
+    const ctx = await createUser("LocalModelUser");
+    await saveAiConfig(ctx.workspaceId, ctx.userId, {
+      provider: "local",
+      model: "",
+      local: { context: "low", images: true },
+    });
+    expect(await getAiConfig(ctx.workspaceId)).toMatchObject({
+      provider: "local",
+      model: "",
+      local: { context: "low", images: true },
+      localAvailable: true,
+    });
+
+    // A model server on port 1234 (nothing on 8000); it lists what `listed` holds.
+    let listed = [{ id: "qwen3-8b", max_model_len: 32768 }];
+    const urls: string[] = [];
+    const bodies: Record<string, unknown>[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const url = String(input instanceof Request ? input.url : input);
+        urls.push(url);
+        if (!url.startsWith("http://127.0.0.1:1234/") && !url.startsWith("http://10.0.0.5:9000/")) {
+          throw new TypeError("fetch failed");
+        }
+        if (url.endsWith("/v1/models")) return Response.json({ object: "list", data: listed });
+        bodies.push(JSON.parse(String(init?.body ?? "{}")));
+        const chunk = {
+          id: "1",
+          object: "chat.completion.chunk",
+          created: 0,
+          model: "x",
+          choices: [{ index: 0, delta: { content: "OK" } }],
+        };
+        return new Response(`data: ${JSON.stringify(chunk)}\n\ndata: [DONE]\n\n`, {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        });
+      }),
+    );
+    try {
+      forgetDetectedServers();
+      expect(await detectLocalServers()).toEqual([
+        { baseUrl: "http://127.0.0.1:1234/v1", models: [{ id: "qwen3-8b", contextLength: 32768 }] },
+      ]);
+      // One model: whatever the server runs.
+      const provider = await providerForWorkspace(ctx.workspaceId);
+      expect(provider).toMatchObject({ kind: "local", model: "qwen3-8b", local: { context: "low", images: true } });
+      expect(await testProvider(provider)).toBe("OK");
+      expect(urls.at(-1)).toBe("http://127.0.0.1:1234/v1/chat/completions");
+      expect(bodies[0]).toMatchObject({ model: "qwen3-8b" });
+
+      // Another model loaded there: followed without touching Settings.
+      listed = [{ id: "llama-3.1-8b" }] as typeof listed;
+      forgetDetectedServers();
+      expect((await providerForWorkspace(ctx.workspaceId)).model).toBe("llama-3.1-8b");
+
+      // Several listed: the one picked in Settings, and a clear error until one is.
+      listed = [{ id: "a" }, { id: "b" }] as typeof listed;
+      forgetDetectedServers();
+      await expect(providerForWorkspace(ctx.workspaceId)).rejects.toThrow(/several models/);
+      await saveAiConfig(ctx.workspaceId, ctx.userId, { provider: "local", model: "b" });
+      expect((await providerForWorkspace(ctx.workspaceId)).model).toBe("b");
+
+      // An address under Advanced: only that server.
+      await saveAiConfig(ctx.workspaceId, ctx.userId, {
+        provider: "local",
+        model: "b",
+        baseUrl: "http://10.0.0.5:9000",
+      });
+      expect(await providerForWorkspace(ctx.workspaceId)).toMatchObject({ model: "b" });
+
+      // Nothing running: says so.
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => Promise.reject(new TypeError("fetch failed"))),
+      );
+      forgetDetectedServers();
+      await saveAiConfig(ctx.workspaceId, ctx.userId, { provider: "local", model: "" });
+      await expect(providerForWorkspace(ctx.workspaceId)).rejects.toThrow(/No local model server was found/);
+    } finally {
+      vi.unstubAllGlobals();
+      forgetDetectedServers();
+    }
+  });
+
   it("remembers settings per provider and supports subscription CLIs without keys", async () => {
     const ctx = await createUser("AiSwitcher");
     await saveAiConfig(ctx.workspaceId, ctx.userId, {
@@ -249,6 +337,7 @@ describe("optional AI configuration", () => {
       baseUrl: null,
       hasApiKey: false,
       apiKeyLast4: null,
+      local: null,
     });
     expect(dto.effort).toBeNull();
     expect(dto.saved.anthropic).toMatchObject({ model: "claude-opus-5-5", hasApiKey: true });

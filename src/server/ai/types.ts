@@ -1,4 +1,4 @@
-import type { AiEffort, AiProviderKind } from "@/lib/types";
+import type { AiEffort, AiProviderKind, LocalModelSettings } from "@/lib/types";
 
 export interface ChatMessage {
   role: "user" | "assistant";
@@ -32,7 +32,15 @@ export interface AIProvider {
   readonly model: string;
   /** Streams the assistant's text output. */
   stream(req: CompletionRequest): AsyncIterable<string>;
+  /** Local models: how much context they get and whether they read images (others: full context, images). */
+  readonly local?: LocalModelSettings;
 }
+
+/** Whether a provider is a local model set to low context. */
+export const lowContext = (provider: Pick<AIProvider, "local">) => provider.local?.context === "low";
+
+/** Whether a provider can be sent images (local models only when the user said so). */
+export const readsImages = (provider: Pick<AIProvider, "local">) => provider.local?.images ?? true;
 
 export type AIErrorKind =
   "not_configured" | "auth" | "rate_limited" | "unavailable" | "timeout" | "refused" | "bad_request";
@@ -56,6 +64,8 @@ export interface ProviderConfig {
   apiKey: string | null;
   timeoutMs: number;
   fetch: typeof fetch;
+  /** Local models only. */
+  local?: LocalModelSettings | null;
 }
 
 /** Collects a stream into a string. */

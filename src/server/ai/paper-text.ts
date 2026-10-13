@@ -75,9 +75,11 @@ export async function loadPaperText(workspaceId: string, paperId: string): Promi
 }
 
 /** Characters of paper text a provider is given for whole-paper tasks and for questions. */
-export function contextBudget(provider: Pick<AIProvider, "kind">) {
-  // Local and self-hosted models often have small context windows; hosted models take a whole paper.
-  const small = provider.kind === "ollama" || provider.kind === "openai_compatible";
+export function contextBudget(provider: Pick<AIProvider, "kind" | "local">) {
+  // Self-hosted models often have small context windows; hosted models take a whole paper. Local models get
+  // what their Context setting says.
+  const small =
+    provider.kind === "ollama" || provider.kind === "openai_compatible" || provider.local?.context === "low";
   return small ? { whole: 48_000, question: 24_000 } : { whole: 200_000, question: 64_000 };
 }
 

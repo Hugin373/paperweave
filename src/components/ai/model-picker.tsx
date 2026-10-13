@@ -18,6 +18,7 @@ import {
   EFFORT_HINT,
   EFFORT_LABEL,
   effortsFor,
+  blankModelLabel,
   modelLabel,
   optionsFor,
   PROVIDERS,
@@ -32,7 +33,7 @@ function pickerModels(provider: AiProviderKind, config: AiConfigDto): AiModelOpt
   const options = optionsFor(provider, config);
   const saved = config.saved[provider]?.model;
   if (saved !== undefined && !options.some((o) => o.value === saved)) {
-    return [...options, { value: saved, label: saved || "Default model" }];
+    return [...options, { value: saved, label: saved || blankModelLabel(provider) }];
   }
   return options;
 }

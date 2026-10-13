@@ -35,7 +35,7 @@ Research question → discover papers → evaluate → explore lineage → read 
   the literature, writes cited reports, compares papers with page references, looks at figures, and proposes
   changes to your workspace (collections, tags, concepts, notes, highlights) that you apply and can undo.
   Bring your own model: your Claude or ChatGPT subscription (via the Claude Code / Codex CLIs), Anthropic,
-  OpenAI, any OpenAI-compatible server, or Ollama.
+  OpenAI, any OpenAI-compatible API, or a model running on your own computer.
 - **Works without AI** — every core feature works with no AI configured.
 
 ## Quick start
@@ -97,8 +97,8 @@ model and effort on the fly.
 | Claude subscription (via Claude Code) | Install [Claude Code](https://claude.com/claude-code) on the computer running Paperweave and sign in.                          |
 | ChatGPT subscription (via Codex)      | Install the [Codex CLI](https://developers.openai.com/codex/cli) and run `codex login`.                                        |
 | Anthropic / OpenAI                    | An API key from [console.anthropic.com](https://console.anthropic.com/) / [platform.openai.com](https://platform.openai.com/). |
-| OpenAI-compatible                     | Base URL with the API prefix (vLLM, LM Studio, llama.cpp, OpenRouter…), model id, key if required.                             |
-| Ollama                                | `ollama pull llama3.1`, base URL `http://localhost:11434`.                                                                     |
+| OpenAI-compatible API                 | A hosted service's base URL with the API prefix (OpenRouter, Together, Groq…), model id and key.                               |
+| Local model                           | Any model server on your computer or network that speaks the OpenAI chat API. See [SETUP.md](SETUP.md#local-model).            |
 
 The subscription providers run the official CLIs non-interactively in an empty folder with no tools (Claude
 Code) or a read-only sandbox (Codex); your login never leaves the CLI. They are meant for your own use only —

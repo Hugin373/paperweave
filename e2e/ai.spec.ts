@@ -162,10 +162,11 @@ test("the model picker switches the AI used while working, and Default follows S
   const errors = trackErrors(page);
   await signUp(context.request, "Picker");
   await page.goto("/settings?tab=ai");
-  // Two connected providers: Ollama (not running here) and the mock, which becomes the default.
-  await page.getByLabel("Provider").selectOption("ollama");
+  // Two connected providers: a local model (none running here) and the mock, which becomes the default.
+  await page.getByLabel("Provider").selectOption("local");
+  await expect(page.getByText(/No model server found on this computer/)).toBeVisible({ timeout: 15_000 });
   await page.getByRole("button", { name: "Save" }).click();
-  await expect(page.getByText(/Connected · Ollama/)).toBeVisible();
+  await expect(page.getByText(/Connected · Local model · follows the loaded model/)).toBeVisible();
   await page.getByLabel("Provider").selectOption("mock");
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page.getByText(/Connected · Mock/)).toBeVisible();
@@ -174,20 +175,21 @@ test("the model picker switches the AI used while working, and Default follows S
   const picker = page.getByRole("button", { name: /^AI model:/ });
   await expect(picker).toHaveAccessibleName("AI model: Mock · mock-1 (default)");
   await picker.click();
-  await page.getByRole("group", { name: "Ollama (local)" }).getByRole("menuitem", { name: "llama3.1" }).click();
-  await expect(picker).toHaveAccessibleName("AI model: Ollama · llama3.1");
+  await page.getByRole("group", { name: "Local model" }).getByRole("menuitem", { name: "Loaded model" }).click();
+  await expect(picker).toHaveAccessibleName("AI model: Local · Loaded model");
 
-  // The picked model is used: Ollama is not running, so the research fails with an explanation.
+  // The picked model is used: no local model is running, so the research fails with an explanation.
   await page.getByLabel("Message", { exact: true }).fill("What is attention in transformers?");
   await page.getByRole("button", { name: "Send" }).click();
-  await expect(page.getByText(/Could not reach Ollama|private network/)).toBeVisible({ timeout: 60_000 });
-  await expect(page.getByRole("button", { name: /^Failed after/ })).toBeVisible();
+  // Found missing before anything starts: the question stays in the box.
+  await expect(page.getByText(/No local model server was found/)).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByLabel("Message", { exact: true })).toHaveValue("What is attention in transformers?");
 
   // Back to the default (the mock), which also applies on this page.
   await page.getByRole("button", { name: /^AI model:/ }).click();
   await page.getByRole("menuitem", { name: /Default from Settings/ }).click();
   await expect(page.getByRole("button", { name: /^AI model:/ })).toHaveAccessibleName(/\(default\)$/);
-  await page.getByRole("button", { name: "Try again" }).click();
+  await page.getByRole("button", { name: "Send" }).click();
   await expect(page.getByText(/\[mock\] Research report based on/)).toBeVisible({ timeout: 60_000 });
   await expect(page.getByText(/AI-generated · Mock · mock-1/).last()).toBeVisible();
   expect(errors).toEqual([]);

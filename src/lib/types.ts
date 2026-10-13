@@ -303,7 +303,26 @@ export interface WorkspaceSearchResponse {
   collections: CollectionSummary[];
 }
 
-export type AiProviderKind = "openai" | "anthropic" | "openai_compatible" | "ollama" | "claude_code" | "codex" | "mock";
+export type AiProviderKind =
+  "openai" | "anthropic" | "openai_compatible" | "local" | "ollama" | "claude_code" | "codex" | "mock";
+
+/**
+ * How Paperweave talks to a local model. "full": exactly as to Claude and GPT. "low": for short context
+ * windows — less text per request, only the core assistant tools, no playbooks, smaller research budgets.
+ */
+export interface LocalModelSettings {
+  context: "full" | "low";
+  /** Whether the model can read images (the assistant then may look at pages of PDFs). */
+  images: boolean;
+}
+
+export const DEFAULT_LOCAL_MODEL_SETTINGS: LocalModelSettings = { context: "full", images: false };
+
+/** A model server found on this computer (or at the address given), with the models it lists. */
+export interface LocalModelServer {
+  baseUrl: string;
+  models: { id: string; contextLength: number | null }[];
+}
 
 /** A provider/model/effort picked while working, overriding the workspace default for a request. */
 export interface AiChoice {
@@ -338,6 +357,8 @@ export interface AiProviderSettingsDto {
   baseUrl: string | null;
   hasApiKey: boolean;
   apiKeyLast4: string | null;
+  /** Local models only. */
+  local: LocalModelSettings | null;
 }
 
 export interface AiConfigDto {
@@ -349,7 +370,10 @@ export interface AiConfigDto {
   baseUrl: string | null;
   hasApiKey: boolean;
   apiKeyLast4: string | null;
+  local: LocalModelSettings | null;
   mockAvailable: boolean;
+  /** Whether this server may connect to a model on this computer or its network. */
+  localAvailable: boolean;
   /** Whether this server allows the Claude Code / Codex subscription providers. */
   subscriptionAvailable: boolean;
   /** Providers with saved settings that can be used right now (the model picker lists these). */

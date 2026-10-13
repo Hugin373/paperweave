@@ -51,6 +51,8 @@ export const PROVIDERS: {
   subscription?: boolean;
   models?: AiModelOption[];
   modelHint?: string;
+  /** No longer offered; still shown to a workspace that uses it. */
+  retired?: boolean;
 }[] = [
   {
     id: "claude_code",
@@ -106,20 +108,31 @@ export const PROVIDERS: {
   {
     id: "openai_compatible",
     label: "OpenAI-compatible API",
-    help: "Any server implementing the OpenAI Chat Completions API: vLLM, LM Studio, llama.cpp server, OpenRouter, Together, Groq…",
+    help: "Any hosted service implementing the OpenAI Chat Completions API, such as OpenRouter, Together or Groq. For a model on your own computer, choose Local model.",
     model: "",
     needsKey: false,
     baseUrl: "required",
     baseUrlPlaceholder: "http://localhost:1234/v1",
   },
   {
+    id: "local",
+    label: "Local model",
+    help: "A model running on your own computer, served by whatever you choose. Paperweave finds the server on its own; it must speak the OpenAI chat API, as most local model servers do.",
+    model: "",
+    needsKey: false,
+    baseUrl: "optional",
+    baseUrlPlaceholder: "http://localhost:8000/v1",
+    modelHint: "The model name exactly as your server expects it.",
+  },
+  {
     id: "ollama",
     label: "Ollama (local)",
-    help: "Runs models on your own machine. The server must be able to reach the Ollama endpoint.",
+    help: "Runs models on your own machine. The server must be able to reach the Ollama endpoint. New setups: use Local model.",
     model: "llama3.1",
     needsKey: false,
     baseUrl: "optional",
     baseUrlPlaceholder: "http://localhost:11434",
+    retired: true,
   },
   {
     id: "mock",
@@ -138,6 +151,7 @@ export const PROVIDER_SHORT: Record<AiProviderKind, string> = {
   anthropic: "Claude API",
   openai: "OpenAI",
   openai_compatible: "Custom API",
+  local: "Local",
   ollama: "Ollama",
   mock: "Mock",
 };
@@ -152,5 +166,10 @@ export function optionsFor(provider: AiProviderKind, config: AiConfigDto): AiMod
 
 /** Display name of a model, e.g. "Opus" or "GPT-6-Luna" (falls back to the raw id). */
 export function modelLabel(provider: AiProviderKind, model: string, config: AiConfigDto): string {
-  return optionsFor(provider, config).find((o) => o.value === model)?.label ?? (model || "Default model");
+  return optionsFor(provider, config).find((o) => o.value === model)?.label ?? (model || blankModelLabel(provider));
+}
+
+/** What an unnamed model is: the provider's default, or for a local model whatever its server runs. */
+export function blankModelLabel(provider: AiProviderKind) {
+  return provider === "local" ? "Loaded model" : "Default model";
 }

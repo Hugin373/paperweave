@@ -4,12 +4,16 @@ import { deleteAiConfig, getAiConfig, saveAiConfig } from "@/server/ai/config";
 import { assertCanWrite, handler, parseBody, requireContext } from "@/server/http";
 
 const configSchema = z.object({
-  provider: z.enum(["openai", "anthropic", "openai_compatible", "ollama", "claude_code", "codex", "mock"]),
+  provider: z.enum(["openai", "anthropic", "openai_compatible", "local", "ollama", "claude_code", "codex", "mock"]),
   model: z.string().trim().max(200),
   baseUrl: z.string().trim().max(500).nullable().optional(),
   apiKey: z.string().max(500).nullable().optional(),
   enabled: z.boolean().optional(),
   effort: z.enum(AI_EFFORTS).nullable().optional(),
+  local: z
+    .object({ context: z.enum(["full", "low"]), images: z.boolean() })
+    .nullable()
+    .optional(),
 });
 
 /** The workspace's AI configuration. API keys are never returned. */

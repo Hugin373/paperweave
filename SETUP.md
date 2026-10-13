@@ -164,6 +164,31 @@ does not match the address exactly, or Paperweave was not restarted.
 
 ---
 
+## Local model
+
+Paperweave can use a model running on your own computer: an open-weight model or your own fine-tune. Start it
+with any server that speaks the OpenAI chat API, then choose **Local model** in **Settings → AI**: Paperweave
+finds the server on its own (it looks on the ports local model servers usually use) and uses whatever model
+it runs. If the server lists several models, pick one there. For example, with
+[uv](https://docs.astral.sh/uv/) and Hugging Face transformers (any model id from huggingface.co, or a folder
+with your own weights):
+
+```bash
+uvx --from "transformers[serving]" --with requests transformers serve Qwen/Qwen3-8B --port 8000
+```
+
+Under **Advanced**:
+
+- **Address** — only if the server runs on another computer or on an unusual port.
+- **Context: Full** sends the model exactly what Claude and GPT get: whole papers, every assistant tool and
+  playbook. **Low** is for models with a short context window: less text per request, only the core assistant
+  tools, no playbooks, and smaller budgets for Deep research and Field analysis. When the server reports the
+  model's context window, Paperweave suggests one.
+- **The model can read images** lets the assistant look at pages of PDFs (figures, tables, equations). Leave
+  it off for text-only models.
+
+Answers are only as good as the model: smaller models may struggle with the assistant's longer tasks.
+
 ## Server deployment
 
 Paperweave is one Node.js service plus PostgreSQL 15+ and S3-compatible storage (AWS S3, R2, Backblaze B2,

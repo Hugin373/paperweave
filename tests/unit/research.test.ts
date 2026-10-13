@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { markdownToDoc } from "@/lib/markdown-doc";
 import type { ResearchStepKind } from "@/lib/types";
+import { contextBudget } from "@/server/ai/paper-text";
 import {
   agentSystem,
   citedKeys,
   LIMITS,
+  LOW_LIMITS,
+  offersTool,
   parseDecision,
   roundPrompt,
   runResearchLoop,
@@ -137,6 +140,61 @@ describe("research loop", () => {
     expect(provider.calls[0].system).not.toContain('"tool": "search_papers"');
     expect(out.steps.map((s) => s.kind)).toEqual(["plan", "write"]);
     expect(provider.calls[1].messages[0].content).toContain("literature search is off");
+  });
+
+  it("gives a local model at low context the core tools only, and tells it when it asks for others", async () => {
+    class LocalLow extends Scripted {
+      readonly local = { context: "low" as const, images: false };
+    }
+    const provider = new LocalLow([
+      '{"thought": "Compare.", "actions": [{"tool": "extract_fields", "papers": ["P1", "P2"], "fields": ["dataset"]}]}',
+      '{"thought": "Done.", "done": true}',
+      "Reply.",
+    ]);
+    const out = sink();
+    await runResearchLoop({
+      provider,
+      ctx: { workspaceId: "00000000-0000-0000-0000-000000000000", sources: new SourceRegistry() },
+      state: { question: "Q?", mode: "deep", history: [], scopeKeys: [], findings: [], done: [], changes: [] },
+      sink: out.s,
+      signal: new AbortController().signal,
+    });
+    const system = provider.calls[0].system;
+    expect(system).toContain('"tool": "read_paper"');
+    expect(system).not.toContain('"tool": "extract_fields"');
+    expect(system).not.toContain('"tool": "view_page"');
+    expect(system).not.toContain("Playbooks —");
+    expect(system).not.toContain("Deleting —");
+    expect(provider.calls[0].messages[0].content).toContain(`at most ${LOW_LIMITS.deep.rounds}.`);
+    expect(provider.calls[1].messages[0].content).toContain("extract_fields: not available with this model's settings");
+  });
+});
+
+/** The planner's instructions as Claude and GPT get them. */
+const fullSystem = (mode: "search") => agentSystem(mode, { low: false, images: true });
+
+describe("what the assistant gives the model", () => {
+  it("leaves out only view_page for a model that cannot read images", () => {
+    const system = agentSystem("search", { low: false, images: false });
+    expect(system).not.toContain('"tool": "view_page"');
+    expect(system).toContain('"tool": "extract_fields"');
+    expect(system).toContain("Playbooks —");
+    expect(agentSystem("search")).toBe(fullSystem("search"));
+  });
+
+  it("offers every tool at full context, the core ones at low context", () => {
+    expect(offersTool({ low: false, images: true }, "extract_fields")).toBe(true);
+    expect(offersTool({ low: true, images: true }, "extract_fields")).toBe(false);
+    expect(offersTool({ low: true, images: true }, "save_papers")).toBe(true);
+    expect(offersTool({ low: false, images: false }, "view_page")).toBe(false);
+    expect(LOW_LIMITS.field.totalActions).toBeLessThan(LIMITS.field.totalActions);
+  });
+
+  it("sends a local model at low context less of a paper", () => {
+    expect(contextBudget({ kind: "local", local: { context: "low", images: false } }).whole).toBe(48_000);
+    expect(contextBudget({ kind: "local", local: { context: "full", images: false } })).toEqual(
+      contextBudget({ kind: "anthropic" }),
+    );
   });
 });
 

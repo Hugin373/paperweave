@@ -1,17 +1,25 @@
 "use client";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, Info, KeyRound, ShieldCheck, Sparkles, Terminal } from "lucide-react";
-import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { CheckCircle2, Info, KeyRound, RefreshCw, Server, ShieldCheck, Sparkles, Terminal } from "lucide-react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select } from "@/components/ui/input";
 import { PageLoading } from "@/components/ui/spinner";
-import { api, errorMessage } from "@/lib/api";
+import { api, errorMessage, qs } from "@/lib/api";
 import { useAiConfig } from "@/lib/hooks";
 import { EFFORT_HINT, EFFORT_LABEL, effortsFor, optionsFor, PROVIDERS } from "@/lib/ai-models";
-import type { AiConfigDto, AiEffort, AiProviderKind } from "@/lib/types";
+import {
+  DEFAULT_LOCAL_MODEL_SETTINGS,
+  type AiConfigDto,
+  type AiEffort,
+  type AiProviderKind,
+  type LocalModelServer,
+  type LocalModelSettings,
+} from "@/lib/types";
 
 /** Dropdown value that switches the model field to free text. */
 const CUSTOM_MODEL = "__custom__";
@@ -22,7 +30,7 @@ export function AiSettings() {
   // Re-mount the form whenever the saved configuration changes.
   return (
     <AiSettingsForm
-      key={`${config.provider}|${config.model}|${config.effort}|${config.baseUrl}|${config.enabled}`}
+      key={`${config.provider}|${config.model}|${config.effort}|${config.baseUrl}|${config.enabled}|${JSON.stringify(config.local)}`}
       config={config}
     />
   );
@@ -40,13 +48,16 @@ function AiSettingsForm({ config }: { config: AiConfigDto }) {
   const [replaceKey, setReplaceKey] = useState(false);
   const [enabled, setEnabled] = useState(config.provider ? config.enabled : true);
   const [effort, setEffort] = useState<AiEffort | null>(config.effort);
+  const [local, setLocal] = useState<LocalModelSettings>(config.local ?? DEFAULT_LOCAL_MODEL_SETTINGS);
   const [testResult, setTestResult] = useState<string | null>(null);
 
   const meta = PROVIDERS.find((p) => p.id === provider)!;
   const available = PROVIDERS.filter(
     (p) =>
       (p.id !== "mock" || config.mockAvailable || config.provider === "mock") &&
-      (!p.subscription || config.subscriptionAvailable || config.provider === p.id),
+      (!p.subscription || config.subscriptionAvailable || config.provider === p.id) &&
+      (p.id !== "local" || config.localAvailable || config.provider === "local") &&
+      (!p.retired || config.provider === p.id),
   );
   const remembered = config.saved[provider];
   const keyStored = !!remembered?.hasApiKey;
@@ -70,6 +81,7 @@ function AiSettingsForm({ config }: { config: AiConfigDto }) {
           baseUrl: baseUrl.trim() || null,
           enabled,
           effort: effortChoices.some((e) => e.value === effort) ? effort : null,
+          ...(provider === "local" ? { local } : {}),
           ...(keyStored && !replaceKey ? {} : { apiKey: apiKey.trim() || null }),
         },
       }),
@@ -102,6 +114,29 @@ function AiSettingsForm({ config }: { config: AiConfigDto }) {
     },
   });
 
+  const keyField = (
+    <Field label={meta.needsKey ? "API key" : "API key (if required)"} htmlFor="ai-key">
+      {keyStored && !replaceKey ? (
+        <div className="flex items-center gap-2 text-sm">
+          <KeyRound className="size-4 text-muted" aria-hidden />
+          <span>Key saved (ends in {remembered?.apiKeyLast4})</span>
+          <Button size="sm" variant="ghost" onClick={() => setReplaceKey(true)}>
+            Replace
+          </Button>
+        </div>
+      ) : (
+        <Input
+          id="ai-key"
+          type="password"
+          autoComplete="off"
+          value={apiKey}
+          onChange={(e) => setApiKey(e.target.value)}
+          placeholder={meta.needsKey ? "sk-…" : "Optional"}
+        />
+      )}
+    </Field>
+  );
+
   return (
     <div className="max-w-2xl space-y-6">
       <div className="flex items-start gap-3 rounded-xl border border-border bg-surface p-4">
@@ -126,7 +161,7 @@ function AiSettingsForm({ config }: { config: AiConfigDto }) {
         {config?.configured ? (
           <Badge tone={config.enabled ? "success" : "neutral"}>
             {config.enabled ? "Connected" : "Disabled"} · {PROVIDERS.find((p) => p.id === config.provider)?.label}
-            {config.model ? ` · ${config.model}` : ""}
+            {config.model ? ` · ${config.model}` : config.provider === "local" ? " · follows the loaded model" : ""}
             {config.effort ? ` · ${EFFORT_LABEL[config.effort].toLowerCase()} effort` : ""}
           </Badge>
         ) : (
@@ -153,6 +188,7 @@ function AiSettingsForm({ config }: { config: AiConfigDto }) {
               const nextOptions = optionsFor(next, config);
               setModel(nextModel);
               setEffort(saved?.effort ?? null);
+              setLocal(saved?.local ?? DEFAULT_LOCAL_MODEL_SETTINGS);
               setCustomModel(nextOptions.length > 0 && !nextOptions.some((o) => o.value === nextModel));
               setBaseUrl(saved?.baseUrl ?? "");
               setTestResult(null);
@@ -204,54 +240,56 @@ function AiSettingsForm({ config }: { config: AiConfigDto }) {
             </div>
           </div>
         )}
-        <Field
-          label="Default model"
-          htmlFor="ai-model"
-          hint={
-            customModel || !modelOptions.length
-              ? "The model identifier exactly as the provider expects it."
-              : meta.modelHint
-          }
-        >
-          {modelOptions.length > 0 && (
-            <Select
-              id={customModel ? undefined : "ai-model"}
-              aria-label={customModel ? "Model choice" : undefined}
-              value={customModel ? CUSTOM_MODEL : model}
-              onChange={(e) => {
-                if (e.target.value === CUSTOM_MODEL) {
-                  setCustomModel(true);
-                  setModel("");
-                } else {
-                  setCustomModel(false);
-                  setModel(e.target.value);
-                  // Keep the effort only if the new model supports it.
-                  if (effort && !effortsFor(provider, e.target.value, modelOptions).some((o) => o.value === effort)) {
-                    setEffort(null);
+        {provider !== "local" && (
+          <Field
+            label="Default model"
+            htmlFor="ai-model"
+            hint={
+              customModel || !modelOptions.length
+                ? "The model identifier exactly as the provider expects it."
+                : meta.modelHint
+            }
+          >
+            {modelOptions.length > 0 && (
+              <Select
+                id={customModel ? undefined : "ai-model"}
+                aria-label={customModel ? "Model choice" : undefined}
+                value={customModel ? CUSTOM_MODEL : model}
+                onChange={(e) => {
+                  if (e.target.value === CUSTOM_MODEL) {
+                    setCustomModel(true);
+                    setModel("");
+                  } else {
+                    setCustomModel(false);
+                    setModel(e.target.value);
+                    // Keep the effort only if the new model supports it.
+                    if (effort && !effortsFor(provider, e.target.value, modelOptions).some((o) => o.value === effort)) {
+                      setEffort(null);
+                    }
                   }
-                }
-              }}
-            >
-              {modelOptions.map((o) => (
-                <option key={o.value || "default"} value={o.value}>
-                  {o.description ? `${o.label} — ${o.description}` : o.label}
-                </option>
-              ))}
-              <option value={CUSTOM_MODEL}>Other (type a model name)…</option>
-            </Select>
-          )}
-          {(customModel || !modelOptions.length) && (
-            <Input
-              id="ai-model"
-              className={modelOptions.length ? "mt-2" : undefined}
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-              placeholder={meta.model || "model-name"}
-              autoFocus={customModel}
-              required={provider !== "codex"}
-            />
-          )}
-        </Field>
+                }}
+              >
+                {modelOptions.map((o) => (
+                  <option key={o.value || "default"} value={o.value}>
+                    {o.description ? `${o.label} — ${o.description}` : o.label}
+                  </option>
+                ))}
+                <option value={CUSTOM_MODEL}>Other (type a model name)…</option>
+              </Select>
+            )}
+            {(customModel || !modelOptions.length) && (
+              <Input
+                id="ai-model"
+                className={modelOptions.length ? "mt-2" : undefined}
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+                placeholder={meta.model || "model-name"}
+                autoFocus={customModel}
+                required={provider !== "codex"}
+              />
+            )}
+          </Field>
+        )}
         {effortChoices.length > 0 && (
           <Field
             label="Default effort"
@@ -276,7 +314,7 @@ function AiSettingsForm({ config }: { config: AiConfigDto }) {
             </Select>
           </Field>
         )}
-        {meta.baseUrl !== "none" && (
+        {meta.baseUrl !== "none" && provider !== "local" && (
           <Field
             label={meta.baseUrl === "required" ? "Base URL" : "Base URL (optional)"}
             htmlFor="ai-base"
@@ -296,27 +334,18 @@ function AiSettingsForm({ config }: { config: AiConfigDto }) {
             />
           </Field>
         )}
-        {meta.id !== "mock" && !meta.subscription && (
-          <Field label={meta.needsKey ? "API key" : "API key (if required)"} htmlFor="ai-key">
-            {keyStored && !replaceKey ? (
-              <div className="flex items-center gap-2 text-sm">
-                <KeyRound className="size-4 text-muted" aria-hidden />
-                <span>Key saved (ends in {remembered?.apiKeyLast4})</span>
-                <Button size="sm" variant="ghost" onClick={() => setReplaceKey(true)}>
-                  Replace
-                </Button>
-              </div>
-            ) : (
-              <Input
-                id="ai-key"
-                type="password"
-                autoComplete="off"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                placeholder={meta.needsKey ? "sk-…" : "Optional"}
-              />
-            )}
-          </Field>
+        {meta.id !== "mock" && !meta.subscription && provider !== "local" && keyField}
+        {provider === "local" && (
+          <LocalModelPanel
+            config={config}
+            model={model}
+            onModel={setModel}
+            address={baseUrl}
+            onAddress={setBaseUrl}
+            local={local}
+            onLocal={setLocal}
+            keyField={keyField}
+          />
         )}
         <label className="flex items-center gap-2 text-sm">
           <input
@@ -352,6 +381,176 @@ function AiSettingsForm({ config }: { config: AiConfigDto }) {
           </p>
         )}
       </form>
+    </div>
+  );
+}
+
+/** Context windows below this many tokens get Low context by default. */
+const LOW_CONTEXT_TOKENS = 65_536;
+
+/**
+ * Local model: the model server running on this computer is found on its own. One model listed: Paperweave
+ * uses whatever the server runs. Several: the user picks one. The address and the rest are under Advanced.
+ */
+function LocalModelPanel({
+  config,
+  model,
+  onModel,
+  address,
+  onAddress,
+  local,
+  onLocal,
+  keyField,
+}: {
+  config: AiConfigDto;
+  model: string;
+  onModel: (m: string) => void;
+  address: string;
+  onAddress: (a: string) => void;
+  local: LocalModelSettings;
+  onLocal: (l: LocalModelSettings) => void;
+  keyField: React.ReactNode;
+}) {
+  // The address looked at: changes when "Detect again" is pressed or the address field is left.
+  const [probe, setProbe] = useState(address.trim());
+  const detect = useQuery({
+    queryKey: ["local-models", probe],
+    queryFn: () => api<{ servers: LocalModelServer[] }>(`/api/ai/local-models${qs({ address: probe || undefined })}`),
+    retry: false,
+    staleTime: 0,
+  });
+  const server = detect.data?.servers[0] ?? null;
+  const models = server?.models ?? [];
+  const several = models.length > 1;
+  const host = server ? server.baseUrl.replace(/^https?:\/\//, "").replace(/\/v1$/, "") : "";
+
+  // One model: follow whatever the server runs. Several: keep the pick if it is still listed.
+  useEffect(() => {
+    if (!server) return;
+    if (server.models.length === 1 && model) onModel("");
+    else if (server.models.length > 1 && model && !server.models.some((m) => m.id === model)) onModel("");
+  }, [server, model, onModel]);
+
+  // First setup: a short context window reported by the server suggests Low context.
+  const reported =
+    models.find((m) => m.id === model)?.contextLength ?? (models.length === 1 ? models[0].contextLength : null);
+  useEffect(() => {
+    if (config.saved.local || reported === null) return;
+    onLocal({ ...local, context: reported < LOW_CONTEXT_TOKENS ? "low" : "full" });
+    // Only when the reported size changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reported]);
+
+  const again = () => {
+    setProbe(address.trim());
+    void detect.refetch();
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-lg border border-border bg-surface-2/60 p-3 text-[13px]" role="status">
+        {detect.isLoading ? (
+          <p className="text-muted">Looking for a model server{probe ? ` at ${probe}` : " on this computer"}…</p>
+        ) : detect.error ? (
+          <p className="text-danger">{errorMessage(detect.error, "Could not look for a model server.")}</p>
+        ) : !server ? (
+          <p className="text-muted">
+            No model server found{probe ? ` at ${probe}` : " on this computer"}. Start your model server (any server
+            that speaks the OpenAI chat API), then detect again. If it runs on another computer or an unusual port, give
+            its address under Advanced.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            <p className="flex items-center gap-1.5">
+              <Server className="size-4 text-success" aria-hidden />
+              <span>
+                Found a model server at <span className="font-medium">{host}</span>
+                {several ? ` listing ${models.length} models.` : "."}
+              </span>
+            </p>
+            {several ? (
+              <Field
+                label="Model"
+                htmlFor="ai-local-model"
+                hint="Your server lists several models: pick the one to use."
+              >
+                <Select id="ai-local-model" value={model} onChange={(e) => onModel(e.target.value)} required>
+                  <option value="" disabled>
+                    Choose a model…
+                  </option>
+                  {models.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.id}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            ) : (
+              <p className="text-muted">
+                Model: <span className="font-medium text-text">{models[0]?.id}</span>. Paperweave uses whatever model
+                your server runs, so loading another one there needs no change here.
+              </p>
+            )}
+          </div>
+        )}
+        <Button size="sm" variant="ghost" className="mt-2" onClick={again} loading={detect.isFetching}>
+          <RefreshCw />
+          Detect again
+        </Button>
+      </div>
+
+      <details className="group rounded-lg border border-border px-3 py-2" open={!!address || local.images}>
+        <summary className="cursor-pointer text-[13px] font-medium text-muted">Advanced</summary>
+        <div className="mt-3 space-y-4">
+          <Field
+            label="Address (optional)"
+            htmlFor="ai-base"
+            hint="Only if the server runs on another computer or an unusual port. Empty: Paperweave finds it on this computer."
+          >
+            <Input
+              id="ai-base"
+              type="url"
+              value={address}
+              onChange={(e) => onAddress(e.target.value)}
+              onBlur={() => setProbe(address.trim())}
+              placeholder="http://192.168.1.20:8000/v1"
+            />
+          </Field>
+          {keyField}
+          <Field
+            label="Context"
+            htmlFor="ai-local-context"
+            hint={
+              local.context === "full"
+                ? "Paperweave sends this model exactly what it sends Claude and GPT: whole papers, every assistant tool and playbook."
+                : "For models with a short context window: less text per request, only the core assistant tools, no playbooks, and smaller budgets for Deep research and Field analysis."
+            }
+          >
+            <Select
+              id="ai-local-context"
+              value={local.context}
+              onChange={(e) => onLocal({ ...local, context: e.target.value as LocalModelSettings["context"] })}
+            >
+              <option value="full">Full (same as Claude and GPT)</option>
+              <option value="low">Low (short context window)</option>
+            </Select>
+          </Field>
+          <label className="flex items-start gap-2 text-sm">
+            <input
+              type="checkbox"
+              className="mt-0.5 size-4 accent-[var(--accent)]"
+              checked={local.images}
+              onChange={(e) => onLocal({ ...local, images: e.target.checked })}
+            />
+            <span>
+              The model can read images
+              <span className="block text-[12.5px] text-muted">
+                Lets the assistant look at pages of PDFs (figures, tables, equations). Leave off for text-only models.
+              </span>
+            </span>
+          </label>
+        </div>
+      </details>
     </div>
   );
 }

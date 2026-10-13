@@ -31,6 +31,7 @@ import type {
   AiBasis,
   AiEffort,
   ChangeSet,
+  LocalModelSettings,
   ResearchMode,
   ResearchScope,
   ResearchSource,
@@ -647,6 +648,7 @@ export const aiProviderKind = pgEnum("ai_provider_kind", [
   "anthropic",
   "openai_compatible",
   "ollama",
+  "local",
   "mock",
   "claude_code",
   "codex",
@@ -664,6 +666,8 @@ export const aiConfigs = pgTable("ai_configs", {
   apiKeyLast4: text("api_key_last4"),
   /** Reasoning effort (low…max); null means the provider's default. */
   effort: text("effort").$type<AiEffort>(),
+  /** Local models: how much context they get and whether they read images. */
+  localSettings: jsonb("local_settings").$type<LocalModelSettings>(),
   enabled: boolean("enabled").notNull().default(true),
   updatedBy: text("updated_by").references(() => users.id, { onDelete: "set null" }),
   ...timestamps,
@@ -683,6 +687,7 @@ export const aiProviderSettings = pgTable(
     apiKeyEncrypted: text("api_key_encrypted"),
     apiKeyLast4: text("api_key_last4"),
     effort: text("effort").$type<AiEffort>(),
+    localSettings: jsonb("local_settings").$type<LocalModelSettings>(),
     ...timestamps,
   },
   (t) => [primaryKey({ columns: [t.workspaceId, t.provider] })],

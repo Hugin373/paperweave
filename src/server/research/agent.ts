@@ -10,7 +10,7 @@
 import { z } from "zod";
 import { READING_STATUSES, type ProposedChange, type ResearchMode, type ResearchStepKind } from "@/lib/types";
 import type { AIProvider } from "@/server/ai/types";
-import { AIError, complete } from "@/server/ai/types";
+import { AIError, complete, lowContext, readsImages } from "@/server/ai/types";
 import { ScholarlyUnavailableError } from "@/server/scholarly/service";
 import { CHANGE_TOOLS, changeActionSchema, proposeChange, type ChangeAction } from "./changes";
 import { compareVersions, viewPage } from "./document-tools";
@@ -59,6 +59,67 @@ const LITERATURE_TOOLS = new Set(["search_papers", "search_arxiv", "references",
 
 const MAX_FINDINGS_CHARS = 100_000;
 const MAX_SOURCE_LINES = 150;
+
+/**
+ * What the assistant gives the model. Claude, GPT and local models set to "full" context get everything; a
+ * local model set to "low" gets the core tools only, no playbooks and smaller budgets; models that cannot
+ * read images do not get view_page.
+ */
+export interface AssistantProfile {
+  low: boolean;
+  images: boolean;
+}
+
+const FULL_PROFILE: AssistantProfile = { low: false, images: true };
+
+/** Smaller budgets for low context: fewer rounds and actions, so findings stay short. */
+export const LOW_LIMITS: Record<ResearchMode, { rounds: number; actionsPerRound: number; totalActions: number }> = {
+  chat: { rounds: 3, actionsPerRound: 4, totalActions: 10 },
+  search: { rounds: 3, actionsPerRound: 4, totalActions: 10 },
+  deep: { rounds: 4, actionsPerRound: 5, totalActions: 18 },
+  field: { rounds: 5, actionsPerRound: 5, totalActions: 24 },
+};
+
+/** The core tools offered at low context: finding, reading and organizing papers. */
+export const LOW_CONTEXT_TOOLS = new Set([
+  "search_library",
+  "find_saved_papers",
+  "list_workspace",
+  "paper_info",
+  "read_paper",
+  "find_passages",
+  "list_concepts",
+  "read_concept",
+  "read_note",
+  "suggest_placement",
+  "search_papers",
+  "search_arxiv",
+  "references",
+  "citations",
+  "publication_trend",
+  "save_papers",
+  "set_reading_status",
+  "create_collection",
+  "add_to_collection",
+  "remove_from_collection",
+  "tag_papers",
+  "create_concept",
+  "link_concept",
+  "unlink_concept",
+  "create_note",
+  "append_to_note",
+]);
+
+/** Whether the profile offers a tool. */
+export function offersTool(profile: AssistantProfile, tool: string) {
+  if (tool === "view_page" && !profile.images) return false;
+  return !profile.low || LOW_CONTEXT_TOOLS.has(tool);
+}
+
+const LOW_BUDGET = { findingsChars: 30_000, sourceLines: 60, turns: 2, answerChars: 1500 };
+
+const limitsFor = (state: Pick<ResearchState, "mode" | "profile">) =>
+  (state.profile?.low ? LOW_LIMITS : LIMITS)[state.mode];
 
 // ---------------------------------------------------------------------------
 // Protocol
@@ -529,7 +590,29 @@ export function toolFor(a: ReadAction, sources: SourceRegistry): ToolSpec {
 // Prompts
 // ---------------------------------------------------------------------------
 
-export function agentSystem(mode: ResearchMode) {
+/** The planner's instructions, without the tools and playbooks the profile leaves out. */
+export function agentSystem(mode: ResearchMode, profile: AssistantProfile = FULL_PROFILE) {
+  let system = fullAgentSystem(mode);
+  if (profile.low || !profile.images) {
+    system = system
+      .split("\n")
+      .filter((line) => {
+        const tool = /^- \{"tool": "(\w+)"/.exec(line)?.[1];
+        return !tool || offersTool(profile, tool);
+      })
+      .join("\n");
+  }
+  if (profile.low) {
+    // No playbooks: the section from its heading up to the guidelines goes.
+    system = system
+      .replace(/\n\nPlaybooks — [\s\S]*?\n\nGuidelines:/, "\n\nGuidelines:")
+      // Its tools are all left out at low context.
+      .replace(/\nDeleting — [^\n]*/, "");
+  }
+  return system;
+}
+
+function fullAgentSystem(mode: ResearchMode) {
   const literature =
     mode === "chat"
       ? ""
@@ -692,6 +775,8 @@ export interface ResearchState {
   done: string[];
   /** Workspace changes proposed so far. */
   changes: ProposedChange[];
+  /** What the model is given; set from the provider when the loop starts. */
+  profile?: AssistantProfile;
   /** When asked from the PDF reader: the paper, the page on screen (with its text) and the selection. */
   reader?: {
     key: string;
@@ -702,20 +787,18 @@ export interface ResearchState {
   };
 }
 
-function sourcesBlock(sources: SourceRegistry) {
+function sourcesBlock(sources: SourceRegistry, max = MAX_SOURCE_LINES) {
   const all = sources.all();
-  const lines = all
-    .slice(-MAX_SOURCE_LINES)
-    .map((s) => (s.type === "paper" ? paperLine(s) : `${s.key}: user's note "${s.title}"`));
-  return `<sources>\n${lines.join("\n") || "(none yet)"}${all.length > MAX_SOURCE_LINES ? `\n(${all.length - MAX_SOURCE_LINES} earlier sources omitted)` : ""}\n</sources>`;
+  const lines = all.slice(-max).map((s) => (s.type === "paper" ? paperLine(s) : `${s.key}: user's note "${s.title}"`));
+  return `<sources>\n${lines.join("\n") || "(none yet)"}${all.length > max ? `\n(${all.length - max} earlier sources omitted)` : ""}\n</sources>`;
 }
 
 /** The most recent findings that fit the budget (older detail is dropped first). */
-function findingsBlock(findings: string[]) {
+function findingsBlock(findings: string[], max = MAX_FINDINGS_CHARS) {
   const kept: string[] = [];
   let size = 0;
   for (let i = findings.length - 1; i >= 0; i--) {
-    if (size + findings[i].length > MAX_FINDINGS_CHARS) {
+    if (size + findings[i].length > max) {
       kept.unshift(`(${i + 1} earlier findings omitted for length; their sources are still listed in <sources>)`);
       break;
     }
@@ -733,11 +816,13 @@ function changesBlock(changes: ProposedChange[]) {
 }
 
 function contextBlocks(state: ResearchState, sources: SourceRegistry) {
+  const low = !!state.profile?.low;
+  const answerChars = low ? LOW_BUDGET.answerChars : 3000;
   const history = state.history
-    .slice(-4)
+    .slice(low ? -LOW_BUDGET.turns : -4)
     .map(
       (t) =>
-        `<user>${t.question}</user>\n<assistant>${t.answer.length > 3000 ? `${t.answer.slice(0, 3000)}…` : t.answer}</assistant>${
+        `<user>${t.question}</user>\n<assistant>${t.answer.length > answerChars ? `${t.answer.slice(0, answerChars)}…` : t.answer}</assistant>${
           t.ranking ? `\n<ranking>Shown with this reply — ${t.ranking}</ranking>` : ""
         }`,
     );
@@ -755,8 +840,8 @@ function contextBlocks(state: ResearchState, sources: SourceRegistry) {
     `<question>${state.question}</question>`,
     scope,
     reader,
-    sourcesBlock(sources),
-    findingsBlock(state.findings),
+    sourcesBlock(sources, low ? LOW_BUDGET.sourceLines : MAX_SOURCE_LINES),
+    findingsBlock(state.findings, low ? LOW_BUDGET.findingsChars : MAX_FINDINGS_CHARS),
     changesBlock(state.changes),
   ]
     .filter(Boolean)
@@ -764,7 +849,7 @@ function contextBlocks(state: ResearchState, sources: SourceRegistry) {
 }
 
 export function roundPrompt(state: ResearchState, sources: SourceRegistry, round: number) {
-  const limits = LIMITS[state.mode];
+  const limits = limitsFor(state);
   return `${contextBlocks(state, sources)}
 
 <done_actions>
@@ -807,8 +892,10 @@ export async function runResearchLoop(opts: {
 }): Promise<string> {
   const { provider, state, sink, signal } = opts;
   const ctx: ToolContext = { ...opts.ctx, provider, signal };
-  const limits = LIMITS[state.mode];
-  const system = agentSystem(state.mode);
+  state.profile ??= { low: lowContext(provider), images: readsImages(provider) };
+  const profile = state.profile;
+  const limits = limitsFor(state);
+  const system = agentSystem(state.mode, profile);
   let actionsRun = 0;
 
   for (let round = 1; round <= limits.rounds && actionsRun < limits.totalActions; round++) {
@@ -840,8 +927,14 @@ export async function runResearchLoop(opts: {
       break;
     }
     const blocked = decision.actions.filter((a) => state.mode === "chat" && LITERATURE_TOOLS.has(a.tool));
+    const unoffered = decision.actions.filter((a) => !blocked.includes(a) && !offersTool(profile, a.tool));
+    if (unoffered.length) {
+      state.findings.push(
+        `${unoffered.map((a) => a.tool).join(", ")}: not available with this model's settings (Settings → AI).`,
+      );
+    }
     const fresh = decision.actions
-      .filter((a) => !blocked.includes(a) && !state.done.includes(actionId(a)))
+      .filter((a) => !blocked.includes(a) && !unoffered.includes(a) && !state.done.includes(actionId(a)))
       .slice(0, Math.min(limits.actionsPerRound, limits.totalActions - actionsRun));
     sink.finish(planId, { status: "done", detail: decision.thought || undefined });
     if (blocked.length) {

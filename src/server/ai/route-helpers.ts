@@ -10,7 +10,7 @@ import { AIError, type AIProvider } from "./types";
 export const AI_CHOICE_HEADER = "x-paperweave-ai";
 
 const choiceSchema = z.object({
-  provider: z.enum(["openai", "anthropic", "openai_compatible", "ollama", "claude_code", "codex", "mock"]),
+  provider: z.enum(["openai", "anthropic", "openai_compatible", "local", "ollama", "claude_code", "codex", "mock"]),
   model: z.string().max(200),
   effort: z.enum(AI_EFFORTS).nullable(),
 });
